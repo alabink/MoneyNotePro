@@ -207,42 +207,95 @@ function toggleTheme() {
   }
 }
 
-// ==================== FETCH API WRAPPER ====================
+// ==================== GIF LOADING INDICATOR & FETCH API WRAPPER ====================
+let activeLoadingCount = 0;
+
+function showGlobalLoader(labelText = 'Đang tải dữ liệu') {
+  activeLoadingCount += 1;
+  const loaderEl = document.getElementById('global-data-loader');
+  const textEl = document.getElementById('global-loader-text');
+  if (textEl) textEl.textContent = labelText;
+  if (loaderEl) loaderEl.classList.remove('hidden');
+}
+
+function hideGlobalLoader() {
+  activeLoadingCount = Math.max(0, activeLoadingCount - 1);
+  if (activeLoadingCount === 0) {
+    const loaderEl = document.getElementById('global-data-loader');
+    if (loaderEl) loaderEl.classList.add('hidden');
+  }
+}
+
+function getLoadingGifBlockHtml(labelText = 'Đang tải dữ liệu') {
+  return `
+    <div class="py-10 px-4 flex flex-col items-center justify-center gap-3 text-center">
+      <div class="relative w-12 h-12 flex items-center justify-center">
+        <div class="gif-orbit-ring absolute inset-0 rounded-full border-[3px] border-transparent border-t-emerald-500 border-r-indigo-500"></div>
+        <div class="gif-coin-spin w-8 h-8 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 text-slate-950 font-black text-base flex items-center justify-center shadow-lg">
+          ₫
+        </div>
+      </div>
+      <div class="flex items-center gap-1 text-xs sm:text-sm font-bold text-indigo-600 dark:text-indigo-400">
+        <span>${escapeHtml(labelText)}</span>
+        <span class="flex items-center gap-0.5 font-black">
+          <span class="loading-dot-1">.</span>
+          <span class="loading-dot-2">.</span>
+          <span class="loading-dot-3">.</span>
+        </span>
+      </div>
+    </div>
+  `;
+}
+
 async function apiRequest(url, options = {}) {
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
-  };
+  const method = (options.method || 'GET').toUpperCase();
+  const loaderLabel =
+    method === 'GET'
+      ? 'Đang tải dữ liệu'
+      : method === 'DELETE'
+      ? 'Đang xóa dữ liệu'
+      : 'Đang lưu dữ liệu';
 
-  if (state.token) {
-    headers['Authorization'] = `Bearer ${state.token}`;
-  }
+  showGlobalLoader(loaderLabel);
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-    credentials: 'include',
-  });
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    };
 
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const err = new Error(data.message || 'Có lỗi xảy ra khi kết nối máy chủ.');
-    err.code = data.code || null;
-    err.status = response.status;
-
-    if (
-      data.code === 'ACCOUNT_BANNED' ||
-      data.code === 'USER_NOT_FOUND' ||
-      data.code === 'INVALID_TOKEN'
-    ) {
-      err.isAuthInvalid = true;
-      handleForceLogout(data.code === 'ACCOUNT_BANNED' ? data.message : null);
+    if (state.token) {
+      headers['Authorization'] = `Bearer ${state.token}`;
     }
-    throw err;
-  }
 
-  return data;
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const err = new Error(data.message || 'Có lỗi xảy ra khi kết nối máy chủ.');
+      err.code = data.code || null;
+      err.status = response.status;
+
+      if (
+        data.code === 'ACCOUNT_BANNED' ||
+        data.code === 'USER_NOT_FOUND' ||
+        data.code === 'INVALID_TOKEN'
+      ) {
+        err.isAuthInvalid = true;
+        handleForceLogout(data.code === 'ACCOUNT_BANNED' ? data.message : null);
+      }
+      throw err;
+    }
+
+    return data;
+  } finally {
+    hideGlobalLoader();
+  }
 }
 
 // ==================== XÁC THỰC (AUTH & PROFILE) ====================
@@ -579,6 +632,17 @@ async function loadHomeCalendar() {
   try {
     const month = document.getElementById('home-cal-month').value;
     const year = document.getElementById('home-cal-year').value;
+    const grid = document.getElementById('home-calendar-grid');
+
+    if (
+      grid &&
+      (!state.homeCalendarData ||
+        String(state.homeCalendarData.period?.month) !== String(month) ||
+        String(state.homeCalendarData.period?.year) !== String(year))
+    ) {
+      grid.innerHTML = `<div class="col-span-7">${getLoadingGifBlockHtml(`Đang tải lịch tháng ${month}/${year}`)}</div>`;
+    }
+
     const data = await apiRequest(`/api/incomes/analytics?month=${month}&year=${year}`);
     state.homeCalendarData = data;
     saveLocalDataCache();
@@ -697,11 +761,13 @@ async function openDayInspectorModal(dateStr) {
   // Hiển thị tức thì (0ms) từ dữ liệu đang có trong bộ nhớ trước khi đồng bộ ngầm
   const cachedNotes = (state.incomes || []).filter((item) => toInputDateValue(item.date) === targetDate);
   const cachedTotal = cachedNotes.reduce((sum, n) => sum + (Number(n.amount) || 0), 0);
-  subEl.textContent =
-    cachedNotes.length > 0
-      ? `Có ${cachedNotes.length} khoản thu nhập trong ngày ${formatDateVN(targetDate)} — Tổng: ${formatVND(cachedTotal)}`
-      : `Chưa có ghi chú nào trong ngày ${formatDateVN(targetDate)}. Bạn có thể thêm bổ sung bên dưới!`;
-  renderDayModalNotes(cachedNotes, targetDate);
+  if (cachedNotes.length > 0) {
+    subEl.textContent = `Có ${cachedNotes.length} khoản thu nhập trong ngày ${formatDateVN(targetDate)} — Tổng: ${formatVND(cachedTotal)}`;
+    renderDayModalNotes(cachedNotes, targetDate);
+  } else {
+    subEl.textContent = `Đang kiểm tra dữ liệu ngày ${formatDateVN(targetDate)}...`;
+    container.innerHTML = getLoadingGifBlockHtml(`Đang tải ghi chú ngày ${formatDateVN(targetDate)}`);
+  }
 
   try {
     const data = await apiRequest(`/api/incomes?date=${targetDate}`);
@@ -1327,6 +1393,11 @@ async function loadIncomes() {
   try {
     const search = document.getElementById('filter-search')?.value || '';
     const category = document.getElementById('filter-category')?.value || 'all';
+    const listEl = document.getElementById('income-notes-list');
+
+    if (listEl && (!state.incomes || state.incomes.length === 0)) {
+      listEl.innerHTML = getLoadingGifBlockHtml('Đang tải danh sách ghi chú thu nhập');
+    }
 
     const params = new URLSearchParams();
     if (search.trim()) params.set('search', search.trim());

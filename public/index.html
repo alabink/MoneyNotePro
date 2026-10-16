@@ -34,9 +34,33 @@
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/css/styles.css?v=20261016_fast" />
+  <link rel="stylesheet" href="/css/styles.css?v=20261016_loader" />
 </head>
 <body class="grid-paper-bg text-slate-800 dark:text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Global Animated Loading Bar & Floating GIF Loader -->
+  <div id="global-data-loader" class="hidden pointer-events-none">
+    <!-- Thanh chạy sáng trên đỉnh màn hình -->
+    <div class="fixed top-0 left-0 right-0 h-1 z-[85] overflow-hidden bg-indigo-500/15">
+      <div class="top-loading-bar-inner w-full h-full bg-gradient-to-r from-indigo-500 via-emerald-400 to-cyan-400 shadow-[0_0_12px_rgba(16,185,129,0.8)]"></div>
+    </div>
+
+    <!-- Hộp GIF Loading Đồng Xu xoay 3D ở chính giữa phía trên -->
+    <div class="fixed top-3.5 left-1/2 -translate-x-1/2 z-[85] flex items-center gap-2.5 px-4 py-2 rounded-full bg-slate-900/90 dark:bg-slate-800/95 text-white backdrop-blur-md shadow-2xl border border-indigo-400/30 animate-item-in">
+      <div class="relative w-6 h-6 flex items-center justify-center shrink-0">
+        <div class="gif-orbit-ring absolute inset-0 rounded-full border-2 border-transparent border-t-emerald-400 border-r-indigo-400"></div>
+        <div class="gif-coin-spin w-4 h-4 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 text-slate-950 font-extrabold text-[10px] flex items-center justify-center shadow">
+          ₫
+        </div>
+      </div>
+      <span id="global-loader-text" class="text-xs font-extrabold tracking-wide text-emerald-300">Đang tải dữ liệu</span>
+      <span class="flex items-center gap-0.5 text-emerald-400 font-black text-xs">
+        <span class="loading-dot-1">.</span>
+        <span class="loading-dot-2">.</span>
+        <span class="loading-dot-3">.</span>
+      </span>
+    </div>
+  </div>
 
   <!-- Toast Notification Container -->
   <div id="toast-container" class="fixed top-4 right-4 z-[70] flex flex-col gap-2 max-w-md w-full pointer-events-none px-4 sm:px-0"></div>
@@ -1357,6 +1381,6 @@
   </div>
 
   <!-- Application Script -->
-  <script src="/js/app.js?v=20261016_esc"></script>
+  <script src="/js/app.js?v=20261016_loader"></script>
 </body>
 </html>
