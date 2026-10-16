@@ -3,10 +3,30 @@
  * Dữ liệu thật 100% do người dùng nhập + Lịch Tháng Tương Tác cho phép bấm vào bất kỳ ngày nào để xem/sửa/thêm note thu nhập ngày cũ
  */
 
+function loadCachedUser() {
+  try {
+    const raw = localStorage.getItem('moneynote_user');
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function savePersistentAuth(token, user) {
+  if (token) {
+    state.token = token;
+    localStorage.setItem('moneynote_token', token);
+  }
+  if (user) {
+    state.user = user;
+    localStorage.setItem('moneynote_user', JSON.stringify(user));
+  }
+}
+
 // ==================== STATE TOÀN CỤC ====================
 const state = {
   token: localStorage.getItem('moneynote_token') || null,
-  user: null,
+  user: loadCachedUser(),
   categories: [
     { name: 'Lương', color: '#10b981' },
     { name: 'Freelance', color: '#6366f1' },
@@ -112,7 +132,7 @@ function showToast(message, type = 'success') {
   };
 
   const toast = document.createElement('div');
-  toast.className = `pointer-events-auto flex items-center justify-between gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs sm:text-sm font-semibold transition-all duration-300 ${
+  toast.className = `animate-item-in pointer-events-auto flex items-center justify-between gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs sm:text-sm font-semibold transition-all duration-300 ${
     colors[type] || colors.info
   }`;
   toast.innerHTML = `
@@ -182,10 +202,19 @@ async function apiRequest(url, options = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    if (data.code === 'ACCOUNT_BANNED') {
-      handleForceLogout(data.message);
+    const err = new Error(data.message || 'Có lỗi xảy ra khi kết nối máy chủ.');
+    err.code = data.code || null;
+    err.status = response.status;
+
+    if (
+      data.code === 'ACCOUNT_BANNED' ||
+      data.code === 'USER_NOT_FOUND' ||
+      data.code === 'INVALID_TOKEN'
+    ) {
+      err.isAuthInvalid = true;
+      handleForceLogout(data.code === 'ACCOUNT_BANNED' ? data.message : null);
     }
-    throw new Error(data.message || 'Có lỗi xảy ra khi kết nối máy chủ.');
+    throw err;
   }
 
   return data;
@@ -241,9 +270,7 @@ async function submitLogin(email, password) {
       body: JSON.stringify({ email, password }),
     });
 
-    state.token = res.token;
-    localStorage.setItem('moneynote_token', res.token);
-    state.user = res.user;
+    savePersistentAuth(res.token, res.user);
 
     showToast(`Xin chào, ${res.user.fullName}!`, 'success');
     await bootstrapAuthenticatedApp();
@@ -257,6 +284,7 @@ function handleForceLogout(reasonMessage) {
   state.token = null;
   state.user = null;
   localStorage.removeItem('moneynote_token');
+  localStorage.removeItem('moneynote_user');
   document.getElementById('app-view').classList.add('hidden');
   document.getElementById('auth-view').classList.remove('hidden');
   if (reasonMessage) {
@@ -272,28 +300,35 @@ async function handleLogout() {
   showToast('Đã đăng xuất khỏi tài khoản.', 'info');
 }
 
-// ==================== KHỞI TẠO GIAO DIỆN SAU ĐĂNG NHẬP ====================
+// ==================== KHỞI TẠO GIAO DIỆN SAU ĐĂNG NHẬP (GIỮ ĐĂNG NHẬP VĨNH VIỄN ĐẾN KHI LOGOUT) ====================
 async function bootstrapAuthenticatedApp() {
+  // Hiển thị ngay giao diện chính nếu đã có token (không bao giờ nháy màn hình đăng nhập)
+  document.getElementById('auth-view').classList.add('hidden');
+  document.getElementById('app-view').classList.remove('hidden');
+
+  const now = new Date();
+  const todayStr = toInputDateValue(now);
+  state.selectedDate = todayStr;
+  state.filterBySelectedDate = false;
+
+  document.getElementById('home-cal-month').value = String(now.getMonth() + 1);
+  document.getElementById('home-cal-year').value = String(now.getFullYear());
+  document.getElementById('analytics-month').value = String(now.getMonth() + 1);
+  document.getElementById('analytics-year').value = String(now.getFullYear());
+
+  if (state.user) {
+    renderUserHeaderAndProfile();
+  }
+  populateCategorySelects();
+  updateSelectedDateUI();
+
   try {
     const meData = await apiRequest('/api/auth/me');
-    state.user = meData.user;
+    savePersistentAuth(meData.token || state.token, meData.user);
     state.announcements = meData.announcements || [];
     if (Array.isArray(meData.categories) && meData.categories.length > 0) {
       state.categories = meData.categories;
     }
-
-    document.getElementById('auth-view').classList.add('hidden');
-    document.getElementById('app-view').classList.remove('hidden');
-
-    const now = new Date();
-    const todayStr = toInputDateValue(now);
-    state.selectedDate = todayStr;
-    state.filterBySelectedDate = false;
-
-    document.getElementById('home-cal-month').value = String(now.getMonth() + 1);
-    document.getElementById('home-cal-year').value = String(now.getFullYear());
-    document.getElementById('analytics-month').value = String(now.getMonth() + 1);
-    document.getElementById('analytics-year').value = String(now.getFullYear());
 
     renderUserHeaderAndProfile();
     renderBroadcastAnnouncements();
@@ -305,7 +340,13 @@ async function bootstrapAuthenticatedApp() {
     switchMainTab('home');
     if (window.lucide) lucide.createIcons();
   } catch (error) {
-    handleForceLogout();
+    if (error && error.isAuthInvalid) {
+      handleForceLogout(error.message);
+    } else {
+      console.warn('Tạm thời chưa đồng bộ được /api/auth/me, vẫn giữ phiên đăng nhập:', error.message);
+      await Promise.all([loadGoals(), loadHomeCalendar(), loadIncomes()]).catch(() => {});
+      switchMainTab('home');
+    }
   }
 }
 
@@ -758,7 +799,7 @@ function closeDayInspectorModal() {
   document.getElementById('day-inspector-modal').classList.add('hidden');
 }
 
-// ==================== CHUYỂN TAB CHÍNH ====================
+// ==================== CHUYỂN TAB CHÍNH (CÓ ANIMATION MƯỢT) ====================
 function switchMainTab(tabName) {
   state.activeTab = tabName;
   const tabs = ['home', 'analytics', 'goals', 'profile', 'admin'];
@@ -767,7 +808,14 @@ function switchMainTab(tabName) {
     const section = document.getElementById(`main-tab-${t}`);
     const navBtn = document.getElementById(`nav-tab-${t}`);
     if (section) {
-      section.classList.toggle('hidden', t !== tabName);
+      if (t === tabName) {
+        section.classList.remove('hidden', 'animate-tab-enter');
+        void section.offsetWidth;
+        section.classList.add('animate-tab-enter');
+      } else {
+        section.classList.add('hidden');
+        section.classList.remove('animate-tab-enter');
+      }
     }
     if (navBtn) {
       if (t === tabName) {
@@ -1273,11 +1321,12 @@ function renderIncomeNotesList() {
   }
 
   listEl.innerHTML = state.incomes
-    .map((item) => {
+    .map((item, idx) => {
       const catColor = getCategoryColor(item.category);
       const itemDateStr = toInputDateValue(item.date);
+      const delayMs = Math.min(idx * 35, 280);
       return `
-        <div class="group p-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 transition flex items-center justify-between gap-3 shadow-sm">
+        <div style="animation-delay: ${delayMs}ms" class="animate-item-in card-hover-lift group p-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 transition flex items-center justify-between gap-3 shadow-sm">
           <div class="flex items-start gap-3 min-w-0">
             <div class="w-2.5 h-10 rounded-full shrink-0 mt-0.5" style="background-color: ${catColor}"></div>
             <div class="min-w-0">
@@ -2240,9 +2289,7 @@ document.addEventListener('DOMContentLoaded', () => {
         method: 'POST',
         body: JSON.stringify({ fullName, email, password }),
       });
-      state.token = res.token;
-      localStorage.setItem('moneynote_token', res.token);
-      state.user = res.user;
+      savePersistentAuth(res.token, res.user);
       showToast('Tạo tài khoản thành công! Hãy bắt đầu nhập thu nhập của bạn.', 'success');
       await bootstrapAuthenticatedApp();
     } catch (error) {
@@ -2272,6 +2319,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clientPreviewSmartSyntax('');
       if (res.streak && state.user) {
         state.user.streakCount = res.streak.streakCount;
+        savePersistentAuth(state.token, state.user);
         renderUserHeaderAndProfile();
       }
 
@@ -2297,6 +2345,7 @@ document.addEventListener('DOMContentLoaded', () => {
       input.value = '';
       if (res.streak && state.user) {
         state.user.streakCount = res.streak.streakCount;
+        savePersistentAuth(state.token, state.user);
         renderUserHeaderAndProfile();
       }
       showToast(res.message, 'success');
@@ -2336,6 +2385,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (res.streak && state.user) {
         state.user.streakCount = res.streak.streakCount;
+        savePersistentAuth(state.token, state.user);
         renderUserHeaderAndProfile();
       }
 
@@ -2363,6 +2413,7 @@ document.addEventListener('DOMContentLoaded', () => {
       closeEditIncomeModal();
       if (res.streak && state.user) {
         state.user.streakCount = res.streak.streakCount;
+        savePersistentAuth(state.token, state.user);
         renderUserHeaderAndProfile();
       }
       showToast(res.message, 'success');
@@ -2433,7 +2484,7 @@ document.addEventListener('DOMContentLoaded', () => {
         method: 'PUT',
         body: JSON.stringify({ fullName, avatar }),
       });
-      state.user = res.user;
+      savePersistentAuth(state.token, res.user);
       renderUserHeaderAndProfile();
       showToast(res.message, 'success');
     } catch (error) {

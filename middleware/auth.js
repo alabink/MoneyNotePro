@@ -23,12 +23,17 @@ const verifyToken = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'moneynote_pro_super_secret_jwt_key_2026');
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || 'moneynote_pro_super_secret_jwt_key_2026',
+      { ignoreExpiration: true }
+    );
     const user = await User.findById(decoded.id).select('-password');
 
     if (!user) {
       return res.status(401).json({
         success: false,
+        code: 'USER_NOT_FOUND',
         message: 'Không tìm thấy tài khoản người dùng.',
       });
     }
@@ -47,7 +52,8 @@ const verifyToken = async (req, res, next) => {
   } catch (error) {
     return res.status(401).json({
       success: false,
-      message: 'Token không hợp lệ hoặc đã hết hạn.',
+      code: 'INVALID_TOKEN',
+      message: 'Token không hợp lệ.',
     });
   }
 };

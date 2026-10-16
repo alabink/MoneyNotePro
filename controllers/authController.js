@@ -5,11 +5,13 @@ const { SystemSetting } = require('../models/SystemSetting');
 
 const DEFAULT_USER_AVATAR = 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
 
+const TEN_YEARS_MS = 10 * 365 * 24 * 60 * 60 * 1000;
+
 const signToken = (user) => {
   return jwt.sign(
     { id: user._id, role: user.role, email: user.email },
     process.env.JWT_SECRET || 'moneynote_pro_super_secret_jwt_key_2026',
-    { expiresIn: '7d' }
+    { expiresIn: '3650d' }
   );
 };
 
@@ -17,7 +19,7 @@ const sendTokenCookie = (res, token) => {
   res.cookie('token', token, {
     httpOnly: true,
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: TEN_YEARS_MS,
   });
 };
 
@@ -170,11 +172,18 @@ exports.getMe = async (req, res) => {
       await user.save();
     }
 
+    let freshToken = null;
+    if (user) {
+      freshToken = signToken(user);
+      sendTokenCookie(res, freshToken);
+    }
+
     const announcements = await SystemAnnouncement.find({ isActive: true }).sort({ createdAt: -1 });
     const settings = await SystemSetting.getGlobalSettings();
 
     return res.json({
       success: true,
+      token: freshToken,
       user,
       announcements,
       categories: settings.categories,
