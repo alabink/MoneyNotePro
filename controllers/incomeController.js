@@ -4,18 +4,27 @@ const { SystemSetting } = require('../models/SystemSetting');
 const { parseSmartNotepad } = require('../utils/notepadParser');
 const { recalculateUserStreak, toLocalDateKey, parseLocalDateSafe } = require('../utils/streakHelper');
 const { enrichGoalWithProgress } = require('./goalController');
+const { invalidateUserCache } = require('../middleware/auth');
 
 /**
- * Tự động đồng bộ trạng thái các mục tiêu của User khi có thay đổi thu nhập
+ * Tự động đồng bộ trạng thái các mục tiêu và streak của User ở chế độ nền (Non-blocking)
  */
-async function syncUserGoalsStatus(userId) {
-  const goals = await Goal.find({ userId });
-  for (const goal of goals) {
-    await enrichGoalWithProgress(goal);
-  }
+function syncUserGoalsAndStreakInBackground(userId) {
+  setImmediate(async () => {
+    try {
+      await Promise.all([
+        recalculateUserStreak(userId),
+        (async () => {
+          const goals = await Goal.find({ userId });
+          await Promise.all(goals.map((g) => enrichGoalWithProgress(g)));
+        })(),
+      ]);
+      invalidateUserCache(userId);
+    } catch (_) {}
+  });
 }
 
-// POST /api/incomes/quick - Nhập nhanh 1 dòng kiểu Smart Notepad (hỗ trợ chọn ngày bất kỳ hoặc hôm nay)
+// POST /api/incomes/quick - Nhập nhanh 1 dòng kiểu Smart Notepad (Phản hồi tức thì trong 1 query)
 exports.createQuickIncome = async (req, res) => {
   try {
     const { rawText, date } = req.body;
@@ -38,15 +47,15 @@ exports.createQuickIncome = async (req, res) => {
       date: entryDate,
     });
 
-    const streakInfo = await recalculateUserStreak(req.user._id);
-    await syncUserGoalsStatus(req.user._id);
+    // Chạy đồng bộ Streak và Goal ở chế độ nền để trả kết quả ngay lập tức cho người dùng
+    syncUserGoalsAndStreakInBackground(req.user._id);
 
     return res.status(201).json({
       success: true,
       message: `Đã lưu: +${parsed.amount.toLocaleString('vi-VN')} ₫ [${parsed.category}] (${toLocalDateKey(entryDate)})`,
       income,
       parsed,
-      streak: streakInfo,
+      streak: { streakCount: Math.max(1, req.user.streakCount || 1) },
     });
   } catch (error) {
     return res.status(400).json({
@@ -56,7 +65,7 @@ exports.createQuickIncome = async (req, res) => {
   }
 };
 
-// POST /api/incomes - Nhập từ Form chi tiết
+// POST /api/incomes - Nhập từ Form chi tiết (Phản hồi tức thì trong 1 query)
 exports.createIncome = async (req, res) => {
   try {
     const { amount, category, note, date } = req.body;
@@ -86,14 +95,13 @@ exports.createIncome = async (req, res) => {
       date: entryDate,
     });
 
-    const streakInfo = await recalculateUserStreak(req.user._id);
-    await syncUserGoalsStatus(req.user._id);
+    syncUserGoalsAndStreakInBackground(req.user._id);
 
     return res.status(201).json({
       success: true,
       message: 'Đã lưu bản ghi thu nhập thành công!',
       income,
-      streak: streakInfo,
+      streak: { streakCount: Math.max(1, req.user.streakCount || 1) },
     });
   } catch (error) {
     return res.status(500).json({
@@ -103,7 +111,7 @@ exports.createIncome = async (req, res) => {
   }
 };
 
-// GET /api/incomes - Danh sách lịch sử ghi chú (tìm kiếm, lọc danh mục, lọc ngày cụ thể hoặc khoảng ngày)
+// GET /api/incomes - Danh sách lịch sử ghi chú (tối ưu bằng .lean())
 exports.getIncomes = async (req, res) => {
   try {
     const { search, category, date, startDate, endDate, month, year, limit = 300 } = req.query;
@@ -146,7 +154,8 @@ exports.getIncomes = async (req, res) => {
 
     const incomes = await IncomeNote.find(filter)
       .sort({ date: -1, createdAt: -1 })
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .lean();
 
     const totalFilteredAmount = incomes.reduce((sum, item) => sum + item.amount, 0);
 
@@ -164,20 +173,13 @@ exports.getIncomes = async (req, res) => {
   }
 };
 
-// PUT /api/incomes/:id - Cập nhật bản ghi thu nhập (sửa ngày cũ hoặc bất kỳ thông tin nào)
+// PUT /api/incomes/:id - Cập nhật bản ghi thu nhập (Phản hồi tức thì)
 exports.updateIncome = async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, category, note, date } = req.body;
 
-    const income = await IncomeNote.findOne({ _id: id, userId: req.user._id });
-    if (!income) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy bản ghi thu nhập này.',
-      });
-    }
-
+    const updateFields = {};
     if (amount !== undefined) {
       const numericAmount = Number(String(amount).replace(/[^\d]/g, ''));
       if (!numericAmount || numericAmount <= 0) {
@@ -186,30 +188,41 @@ exports.updateIncome = async (req, res) => {
           message: 'Số tiền phải lớn hơn 0 VNĐ.',
         });
       }
-      income.amount = numericAmount;
+      updateFields.amount = numericAmount;
     }
 
     if (category !== undefined && category.trim()) {
-      income.category = category.trim();
+      updateFields.category = category.trim();
     }
 
     if (note !== undefined && note.trim()) {
-      income.note = note.trim();
+      updateFields.note = note.trim();
     }
 
     if (date !== undefined && date) {
-      income.date = parseLocalDateSafe(date);
+      updateFields.date = parseLocalDateSafe(date);
     }
 
-    await income.save();
-    const streakInfo = await recalculateUserStreak(req.user._id);
-    await syncUserGoalsStatus(req.user._id);
+    const income = await IncomeNote.findOneAndUpdate(
+      { _id: id, userId: req.user._id },
+      { $set: updateFields },
+      { new: true }
+    ).lean();
+
+    if (!income) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy bản ghi thu nhập này.',
+      });
+    }
+
+    syncUserGoalsAndStreakInBackground(req.user._id);
 
     return res.json({
       success: true,
       message: 'Đã cập nhật ghi chú thu nhập thành công!',
       income,
-      streak: streakInfo,
+      streak: { streakCount: req.user.streakCount || 1 },
     });
   } catch (error) {
     return res.status(500).json({
@@ -219,11 +232,11 @@ exports.updateIncome = async (req, res) => {
   }
 };
 
-// DELETE /api/incomes/:id - Xóa bản ghi thu nhập
+// DELETE /api/incomes/:id - Xóa bản ghi thu nhập (Phản hồi tức thì trong 1 query)
 exports.deleteIncome = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = await IncomeNote.findOneAndDelete({ _id: id, userId: req.user._id });
+    const deleted = await IncomeNote.findOneAndDelete({ _id: id, userId: req.user._id }).lean();
 
     if (!deleted) {
       return res.status(404).json({
@@ -232,13 +245,13 @@ exports.deleteIncome = async (req, res) => {
       });
     }
 
-    const streakInfo = await recalculateUserStreak(req.user._id);
-    await syncUserGoalsStatus(req.user._id);
+    syncUserGoalsAndStreakInBackground(req.user._id);
 
     return res.json({
       success: true,
       message: 'Đã xóa bản ghi thu nhập.',
-      streak: streakInfo,
+      deletedId: id,
+      streak: { streakCount: req.user.streakCount || 0 },
     });
   } catch (error) {
     return res.status(500).json({
@@ -248,7 +261,7 @@ exports.deleteIncome = async (req, res) => {
   }
 };
 
-// GET /api/incomes/analytics?month=10&year=2026 - Thống kê chi tiết theo Tháng & Năm
+// GET /api/incomes/analytics?month=10&year=2026 - Thống kê chi tiết (Gộp 5 query thành 1 query duy nhất!)
 exports.getMonthlyAnalytics = async (req, res) => {
   try {
     const now = new Date();
@@ -265,29 +278,43 @@ exports.getMonthlyAnalytics = async (req, res) => {
     const startOfYear = new Date(year, 0, 1, 0, 0, 0, 0);
     const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
 
-    const [monthNotes, prevMonthNotes, yearNotes] = await Promise.all([
-      IncomeNote.find({
-        userId: req.user._id,
-        date: { $gte: startOfMonth, $lte: endOfMonth },
-      })
-        .sort({ date: -1, createdAt: -1 })
-        .lean(),
-      IncomeNote.find({
-        userId: req.user._id,
-        date: { $gte: startOfPrevMonth, $lte: endOfPrevMonth },
-      })
-        .select('amount')
-        .lean(),
-      IncomeNote.find({
-        userId: req.user._id,
-        date: { $gte: startOfYear, $lte: endOfYear },
-      })
-        .select('amount date category')
-        .lean(),
-    ]);
+    const minQueryDate = startOfPrevMonth < startOfYear ? startOfPrevMonth : startOfYear;
+
+    // Gộp thành 1 query duy nhất lấy toàn bộ bản ghi cần thiết trong năm + tháng trước
+    const allRangeNotes = await IncomeNote.find({
+      userId: req.user._id,
+      date: { $gte: minQueryDate, $lte: endOfYear },
+    })
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
+    const monthNotes = [];
+    let prevMonthTotal = 0;
+    const yearlySeries = Array.from({ length: 12 }, (_, idx) => ({
+      month: idx + 1,
+      label: `Tháng ${idx + 1}`,
+      total: 0,
+      count: 0,
+    }));
+
+    for (const n of allRangeNotes) {
+      const t = new Date(n.date).getTime();
+      if (t >= startOfMonth.getTime() && t <= endOfMonth.getTime()) {
+        monthNotes.push(n);
+      }
+      if (t >= startOfPrevMonth.getTime() && t <= endOfPrevMonth.getTime()) {
+        prevMonthTotal += n.amount;
+      }
+      if (t >= startOfYear.getTime() && t <= endOfYear.getTime()) {
+        const mIdx = new Date(n.date).getMonth();
+        if (yearlySeries[mIdx]) {
+          yearlySeries[mIdx].total += n.amount;
+          yearlySeries[mIdx].count += 1;
+        }
+      }
+    }
 
     const totalMonth = monthNotes.reduce((sum, n) => sum + n.amount, 0);
-    const prevMonthTotal = prevMonthNotes.reduce((sum, n) => sum + n.amount, 0);
 
     let growthPercent = 0;
     if (prevMonthTotal > 0) {
@@ -358,23 +385,6 @@ exports.getMonthlyAnalytics = async (req, res) => {
       }))
       .sort((a, b) => b.total - a.total);
 
-    const yearlySeries = Array.from({ length: 12 }, (_, idx) => ({
-      month: idx + 1,
-      label: `Tháng ${idx + 1}`,
-      total: 0,
-      count: 0,
-    }));
-
-    for (const note of yearNotes) {
-      const mIdx = new Date(note.date).getMonth();
-      if (yearlySeries[mIdx]) {
-        yearlySeries[mIdx].total += note.amount;
-        yearlySeries[mIdx].count += 1;
-      }
-    }
-
-    const streak = await recalculateUserStreak(req.user._id);
-
     return res.json({
       success: true,
       period: {
@@ -393,7 +403,7 @@ exports.getMonthlyAnalytics = async (req, res) => {
         activeDaysCount: dailySeries.filter((d) => d.total > 0).length,
         bestDay,
       },
-      streak,
+      streak: { streakCount: req.user.streakCount || 0 },
       dailySeries,
       yearlySeries,
       categorySeries,

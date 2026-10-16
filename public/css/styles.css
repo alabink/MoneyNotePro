@@ -246,20 +246,6 @@ html.dark body,
   animation: flamePulse 1.8s ease-in-out infinite;
 }
 
-/* Hover lift cho các thẻ thống kê, sổ tay và mục tiêu */
-.card-hover-lift {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
-}
-
-.card-hover-lift:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 14px 30px -8px rgba(79, 70, 229, 0.14);
-}
-
-.dark .card-hover-lift:hover {
-  box-shadow: 0 14px 30px -8px rgba(99, 102, 241, 0.22);
-}
-
 /* Hiệu ứng nút bấm đàn hồi */
 button {
   transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;

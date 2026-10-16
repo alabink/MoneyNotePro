@@ -12,6 +12,29 @@ function loadCachedUser() {
   }
 }
 
+function loadLocalDataCache() {
+  try {
+    const raw = localStorage.getItem('moneynote_data_cache');
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveLocalDataCache() {
+  try {
+    localStorage.setItem(
+      'moneynote_data_cache',
+      JSON.stringify({
+        incomes: state.incomes.slice(0, 150),
+        goals: state.goals,
+        pinnedGoal: state.pinnedGoal,
+        homeCalendarData: state.homeCalendarData,
+      })
+    );
+  } catch (_) {}
+}
+
 function savePersistentAuth(token, user) {
   if (token) {
     state.token = token;
@@ -22,6 +45,8 @@ function savePersistentAuth(token, user) {
     localStorage.setItem('moneynote_user', JSON.stringify(user));
   }
 }
+
+const initialCache = loadLocalDataCache();
 
 // ==================== STATE TOÀN CỤC ====================
 const state = {
@@ -36,13 +61,13 @@ const state = {
     { name: 'Khác', color: '#8b5cf6' },
   ],
   announcements: [],
-  incomes: [],
-  goals: [],
-  pinnedGoal: null,
+  incomes: initialCache.incomes || [],
+  goals: initialCache.goals || [],
+  pinnedGoal: initialCache.pinnedGoal || null,
   activeTab: 'home',
   selectedDate: toInputDateValue(new Date()), // Ngày đang chọn để nhập / sửa note (YYYY-MM-DD)
   filterBySelectedDate: false, // Có đang lọc danh sách bên dưới theo riêng ngày đã chọn hay không
-  homeCalendarData: null, // Dữ liệu 31 ngày của Lịch Tháng trên trang chủ
+  homeCalendarData: initialCache.homeCalendarData || null, // Dữ liệu 31 ngày của Lịch Tháng trên trang chủ
   celebratedGoalIds: new Set(),
   charts: {
     daily: null,
@@ -285,6 +310,7 @@ function handleForceLogout(reasonMessage) {
   state.user = null;
   localStorage.removeItem('moneynote_token');
   localStorage.removeItem('moneynote_user');
+  localStorage.removeItem('moneynote_data_cache');
   document.getElementById('app-view').classList.add('hidden');
   document.getElementById('auth-view').classList.remove('hidden');
   if (reasonMessage) {
@@ -300,9 +326,8 @@ async function handleLogout() {
   showToast('Đã đăng xuất khỏi tài khoản.', 'info');
 }
 
-// ==================== KHỞI TẠO GIAO DIỆN SAU ĐĂNG NHẬP (GIỮ ĐĂNG NHẬP VĨNH VIỄN ĐẾN KHI LOGOUT) ====================
+// ==================== KHỞI TẠO GIAO DIỆN SAU ĐĂNG NHẬP (HIỂN THỊ TỨC THÌ 0ms + ĐỒNG BỘ SONG SONG) ====================
 async function bootstrapAuthenticatedApp() {
-  // Hiển thị ngay giao diện chính nếu đã có token (không bao giờ nháy màn hình đăng nhập)
   document.getElementById('auth-view').classList.add('hidden');
   document.getElementById('app-view').classList.remove('hidden');
 
@@ -316,36 +341,58 @@ async function bootstrapAuthenticatedApp() {
   document.getElementById('analytics-month').value = String(now.getMonth() + 1);
   document.getElementById('analytics-year').value = String(now.getFullYear());
 
+  // 1. Hiển thị ngay lập tức dữ liệu đã lưu trong Cache (0ms, không cần chờ mạng)
   if (state.user) {
     renderUserHeaderAndProfile();
   }
   populateCategorySelects();
   updateSelectedDateUI();
+  renderHeroGoalBanner();
+  renderGoalsGrid();
+  if (state.homeCalendarData) {
+    document.getElementById('home-cal-month-total').textContent = formatVND(
+      state.homeCalendarData.summary?.totalMonth || 0
+    );
+    document.getElementById('home-cal-active-days').textContent = `${
+      state.homeCalendarData.summary?.activeDaysCount || 0
+    }/${state.homeCalendarData.period?.daysInMonth || 30} ngày có thu nhập (${
+      state.homeCalendarData.summary?.totalEntries || 0
+    } note)`;
+    renderHomeCalendarGrid();
+  }
+  if (state.incomes && state.incomes.length > 0) {
+    const totalCached = state.incomes.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    document.getElementById('notes-count-badge').textContent = state.incomes.length;
+    document.getElementById('notes-total-badge').textContent = formatVND(totalCached);
+    renderIncomeNotesList();
+  }
+  if (window.lucide) lucide.createIcons();
 
+  // 2. Gọi song song tất cả API cùng lúc (nhanh gấp đôi so với gọi tuần tự)
   try {
-    const meData = await apiRequest('/api/auth/me');
-    savePersistentAuth(meData.token || state.token, meData.user);
-    state.announcements = meData.announcements || [];
-    if (Array.isArray(meData.categories) && meData.categories.length > 0) {
-      state.categories = meData.categories;
+    const [meData] = await Promise.all([
+      apiRequest('/api/auth/me'),
+      loadGoals(),
+      loadHomeCalendar(),
+      loadIncomes(),
+    ]);
+
+    if (meData && meData.user) {
+      savePersistentAuth(meData.token || state.token, meData.user);
+      state.announcements = meData.announcements || [];
+      if (Array.isArray(meData.categories) && meData.categories.length > 0) {
+        state.categories = meData.categories;
+      }
+      renderUserHeaderAndProfile();
+      renderBroadcastAnnouncements();
+      populateCategorySelects();
     }
-
-    renderUserHeaderAndProfile();
-    renderBroadcastAnnouncements();
-    populateCategorySelects();
-    updateSelectedDateUI();
-
-    await Promise.all([loadGoals(), loadHomeCalendar(), loadIncomes()]);
-
-    switchMainTab('home');
     if (window.lucide) lucide.createIcons();
   } catch (error) {
     if (error && error.isAuthInvalid) {
       handleForceLogout(error.message);
     } else {
-      console.warn('Tạm thời chưa đồng bộ được /api/auth/me, vẫn giữ phiên đăng nhập:', error.message);
-      await Promise.all([loadGoals(), loadHomeCalendar(), loadIncomes()]).catch(() => {});
-      switchMainTab('home');
+      console.warn('Tạm thời chưa đồng bộ được máy chủ, vẫn giữ phiên đăng nhập:', error.message);
     }
   }
 }
@@ -534,6 +581,7 @@ async function loadHomeCalendar() {
     const year = document.getElementById('home-cal-year').value;
     const data = await apiRequest(`/api/incomes/analytics?month=${month}&year=${year}`);
     state.homeCalendarData = data;
+    saveLocalDataCache();
 
     document.getElementById('home-cal-month-total').textContent = formatVND(data.summary.totalMonth);
     document.getElementById('home-cal-active-days').textContent = `${data.summary.activeDaysCount}/${data.period.daysInMonth} ngày có thu nhập (${data.summary.totalEntries} note)`;
@@ -626,8 +674,8 @@ async function onClickCalendarDay(dateStr) {
   state.filterBySelectedDate = true;
   updateSelectedDateUI();
   renderHomeCalendarGrid();
-  await loadIncomes();
-  await openDayInspectorModal(dateStr);
+  loadIncomes();
+  openDayInspectorModal(dateStr);
 }
 
 // ==================== MODAL SỔ TAY CHI TIẾT CỦA NGÀY BẤT KỲ (#day-inspector-modal) ====================
@@ -646,7 +694,14 @@ async function openDayInspectorModal(dateStr) {
   addDateLabel.textContent = formatDateVN(targetDate);
   modal.classList.remove('hidden');
 
-  container.innerHTML = `<div class="p-6 text-center text-xs text-slate-400">Đang tải ghi chú của ngày ${formatDateVN(targetDate)}...</div>`;
+  // Hiển thị tức thì (0ms) từ dữ liệu đang có trong bộ nhớ trước khi đồng bộ ngầm
+  const cachedNotes = (state.incomes || []).filter((item) => toInputDateValue(item.date) === targetDate);
+  const cachedTotal = cachedNotes.reduce((sum, n) => sum + (Number(n.amount) || 0), 0);
+  subEl.textContent =
+    cachedNotes.length > 0
+      ? `Có ${cachedNotes.length} khoản thu nhập trong ngày ${formatDateVN(targetDate)} — Tổng: ${formatVND(cachedTotal)}`
+      : `Chưa có ghi chú nào trong ngày ${formatDateVN(targetDate)}. Bạn có thể thêm bổ sung bên dưới!`;
+  renderDayModalNotes(cachedNotes, targetDate);
 
   try {
     const data = await apiRequest(`/api/incomes?date=${targetDate}`);
@@ -660,7 +715,9 @@ async function openDayInspectorModal(dateStr) {
 
     renderDayModalNotes(notes, targetDate);
   } catch (error) {
-    container.innerHTML = `<p class="text-xs text-rose-500 p-4">${escapeHtml(error.message)}</p>`;
+    if (cachedNotes.length === 0) {
+      container.innerHTML = `<p class="text-xs text-rose-500 p-4">${escapeHtml(error.message)}</p>`;
+    }
   }
 }
 
@@ -752,20 +809,11 @@ async function saveInlineDayNote(noteId, currentModalDate) {
       body: JSON.stringify({ amount, category, date, note }),
     });
 
-    if (res.streak && state.user) {
-      state.user.streakCount = res.streak.streakCount;
-      renderUserHeaderAndProfile();
-    }
-
     showToast('Đã lưu thay đổi ghi chú thành công!', 'success');
-    await Promise.all([
-      openDayInspectorModal(currentModalDate),
-      loadHomeCalendar(),
-      loadIncomes(),
-      loadGoals(),
-    ]);
+    applyOptimisticIncomeChange('update', res.income);
+    openDayInspectorModal(currentModalDate);
     if (state.activeTab === 'analytics') {
-      await loadMonthlyAnalytics();
+      loadMonthlyAnalytics();
     }
   } catch (error) {
     showToast(error.message, 'error');
@@ -775,20 +823,12 @@ async function saveInlineDayNote(noteId, currentModalDate) {
 async function deleteNoteFromDayModal(noteId, currentModalDate) {
   if (!confirm('Bạn có chắc chắn muốn xóa bản ghi thu nhập này?')) return;
   try {
-    const res = await apiRequest(`/api/incomes/${noteId}`, { method: 'DELETE' });
-    if (res.streak && state.user) {
-      state.user.streakCount = res.streak.streakCount;
-      renderUserHeaderAndProfile();
-    }
+    applyOptimisticIncomeChange('delete', null, noteId);
+    openDayInspectorModal(currentModalDate);
+    await apiRequest(`/api/incomes/${noteId}`, { method: 'DELETE' });
     showToast('Đã xóa ghi chú thu nhập.', 'info');
-    await Promise.all([
-      openDayInspectorModal(currentModalDate),
-      loadHomeCalendar(),
-      loadIncomes(),
-      loadGoals(),
-    ]);
     if (state.activeTab === 'analytics') {
-      await loadMonthlyAnalytics();
+      loadMonthlyAnalytics();
     }
   } catch (error) {
     showToast(error.message, 'error');
@@ -853,6 +893,7 @@ async function loadGoals() {
     const data = await apiRequest('/api/goals');
     state.goals = data.goals || [];
     state.pinnedGoal = data.pinnedGoal || null;
+    saveLocalDataCache();
 
     renderHeroGoalBanner();
     renderGoalsGrid();
@@ -1296,6 +1337,7 @@ async function loadIncomes() {
 
     const data = await apiRequest(`/api/incomes?${params.toString()}`);
     state.incomes = data.incomes || [];
+    saveLocalDataCache();
 
     document.getElementById('notes-count-badge').textContent = data.count || 0;
     document.getElementById('notes-total-badge').textContent = formatVND(data.totalAmount || 0);
@@ -1304,6 +1346,81 @@ async function loadIncomes() {
   } catch (error) {
     console.error('Load incomes error:', error);
   }
+}
+
+/**
+ * Cập nhật giao diện tức thì (Optimistic UI Update 0ms) khi thêm/sửa/xóa khoản thu nhập
+ */
+function applyOptimisticIncomeChange(action, incomeObj, deletedId = null) {
+  let prevItem = null;
+  if (action === 'add' && incomeObj) {
+    state.incomes = [incomeObj, ...state.incomes.filter((i) => i._id !== incomeObj._id)];
+  } else if (action === 'update' && incomeObj) {
+    prevItem = state.incomes.find((i) => i._id === incomeObj._id) || null;
+    state.incomes = state.incomes.map((i) => (i._id === incomeObj._id ? incomeObj : i));
+  } else if (action === 'delete' && deletedId) {
+    prevItem = state.incomes.find((i) => i._id === deletedId) || null;
+    state.incomes = state.incomes.filter((i) => i._id !== deletedId);
+  }
+
+  const totalAmount = state.incomes.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  document.getElementById('notes-count-badge').textContent = state.incomes.length;
+  document.getElementById('notes-total-badge').textContent = formatVND(totalAmount);
+  renderIncomeNotesList();
+
+  // Cập nhật tức thì ô Lịch Tháng (Home Calendar) trong bộ nhớ
+  if (state.homeCalendarData && Array.isArray(state.homeCalendarData.dailySeries)) {
+    const series = state.homeCalendarData.dailySeries;
+    if (action === 'add' && incomeObj) {
+      const dStr = toInputDateValue(incomeObj.date);
+      const cell = series.find((d) => d.dateStr === dStr);
+      if (cell) {
+        cell.total += Number(incomeObj.amount) || 0;
+        cell.count += 1;
+        cell.items = cell.items || [];
+        cell.items.push({
+          id: incomeObj._id,
+          amount: incomeObj.amount,
+          category: incomeObj.category,
+          note: incomeObj.note,
+        });
+      }
+    } else if (action === 'delete' && prevItem) {
+      const dStr = toInputDateValue(prevItem.date);
+      const cell = series.find((d) => d.dateStr === dStr);
+      if (cell) {
+        cell.total = Math.max(0, cell.total - (Number(prevItem.amount) || 0));
+        cell.count = Math.max(0, cell.count - 1);
+      }
+    } else if (action === 'update' && incomeObj) {
+      if (prevItem) {
+        const oldCell = series.find((d) => d.dateStr === toInputDateValue(prevItem.date));
+        if (oldCell) {
+          oldCell.total = Math.max(0, oldCell.total - (Number(prevItem.amount) || 0));
+          oldCell.count = Math.max(0, oldCell.count - 1);
+        }
+      }
+      const newCell = series.find((d) => d.dateStr === toInputDateValue(incomeObj.date));
+      if (newCell) {
+        newCell.total += Number(incomeObj.amount) || 0;
+        newCell.count += 1;
+      }
+    }
+    const totalMonth = series.reduce((s, d) => s + d.total, 0);
+    const totalEntries = series.reduce((s, d) => s + d.count, 0);
+    const activeDaysCount = series.filter((d) => d.total > 0).length;
+    state.homeCalendarData.summary.totalMonth = totalMonth;
+    state.homeCalendarData.summary.totalEntries = totalEntries;
+    state.homeCalendarData.summary.activeDaysCount = activeDaysCount;
+    document.getElementById('home-cal-month-total').textContent = formatVND(totalMonth);
+    document.getElementById('home-cal-active-days').textContent = `${activeDaysCount}/${state.homeCalendarData.period.daysInMonth} ngày có thu nhập (${totalEntries} note)`;
+    renderHomeCalendarGrid();
+  }
+
+  saveLocalDataCache();
+
+  // Đồng bộ nền không chặn thao tác của người dùng
+  Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]).catch(() => {});
 }
 
 function renderIncomeNotesList() {
@@ -1324,9 +1441,9 @@ function renderIncomeNotesList() {
     .map((item, idx) => {
       const catColor = getCategoryColor(item.category);
       const itemDateStr = toInputDateValue(item.date);
-      const delayMs = Math.min(idx * 35, 280);
+      const delayMs = Math.min(idx * 25, 200);
       return `
-        <div style="animation-delay: ${delayMs}ms" class="animate-item-in card-hover-lift group p-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 transition flex items-center justify-between gap-3 shadow-sm">
+        <div style="animation-delay: ${delayMs}ms" class="animate-item-in group p-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 transition flex items-center justify-between gap-3 shadow-sm">
           <div class="flex items-start gap-3 min-w-0">
             <div class="w-2.5 h-10 rounded-full shrink-0 mt-0.5" style="background-color: ${catColor}"></div>
             <div class="min-w-0">
@@ -1388,15 +1505,17 @@ function closeEditIncomeModal() {
 async function deleteIncomeNote(id) {
   if (!confirm('Bạn có chắc chắn muốn xóa bản ghi thu nhập này?')) return;
   try {
+    // Xóa tức thì trên giao diện trước, gọi API song song
+    applyOptimisticIncomeChange('delete', null, id);
     const res = await apiRequest(`/api/incomes/${id}`, { method: 'DELETE' });
     if (res.streak && state.user) {
       state.user.streakCount = res.streak.streakCount;
       renderUserHeaderAndProfile();
     }
     showToast('Đã xóa bản ghi thu nhập.', 'info');
-    await Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]);
   } catch (error) {
     showToast(error.message, 'error');
+    loadIncomes();
   }
 }
 
@@ -2310,22 +2429,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!rawText) return;
 
     try {
+      quickInput.value = '';
+      clientPreviewSmartSyntax('');
+
       const res = await apiRequest('/api/incomes/quick', {
         method: 'POST',
         body: JSON.stringify({ rawText, date: state.selectedDate }),
       });
 
-      quickInput.value = '';
-      clientPreviewSmartSyntax('');
-      if (res.streak && state.user) {
-        state.user.streakCount = res.streak.streakCount;
-        savePersistentAuth(state.token, state.user);
-        renderUserHeaderAndProfile();
-      }
-
       showToast(res.message, 'success');
-      await Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]);
+      applyOptimisticIncomeChange('add', res.income);
     } catch (error) {
+      quickInput.value = rawText;
+      clientPreviewSmartSyntax(rawText);
       showToast(error.message, 'error');
     }
   });
@@ -2338,27 +2454,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!rawText) return;
 
     try {
+      input.value = '';
       const res = await apiRequest('/api/incomes/quick', {
         method: 'POST',
         body: JSON.stringify({ rawText, date: state.selectedDate }),
       });
-      input.value = '';
-      if (res.streak && state.user) {
-        state.user.streakCount = res.streak.streakCount;
-        savePersistentAuth(state.token, state.user);
-        renderUserHeaderAndProfile();
-      }
+
       showToast(res.message, 'success');
-      await Promise.all([
-        openDayInspectorModal(state.selectedDate),
-        loadHomeCalendar(),
-        loadIncomes(),
-        loadGoals(),
-      ]);
+      applyOptimisticIncomeChange('add', res.income);
+      openDayInspectorModal(state.selectedDate);
       if (state.activeTab === 'analytics') {
-        await loadMonthlyAnalytics();
+        loadMonthlyAnalytics();
       }
     } catch (error) {
+      input.value = rawText;
       showToast(error.message, 'error');
     }
   });
@@ -2372,6 +2481,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const note = document.getElementById('detail-note').value;
 
     try {
+      document.getElementById('detail-amount').value = '';
+      document.getElementById('detail-note').value = '';
+
       const res = await apiRequest('/api/incomes', {
         method: 'POST',
         body: JSON.stringify({ amount, category, date, note }),
@@ -2380,18 +2492,11 @@ document.addEventListener('DOMContentLoaded', () => {
       state.selectedDate = date;
       updateSelectedDateUI();
 
-      document.getElementById('detail-amount').value = '';
-      document.getElementById('detail-note').value = '';
-
-      if (res.streak && state.user) {
-        state.user.streakCount = res.streak.streakCount;
-        savePersistentAuth(state.token, state.user);
-        renderUserHeaderAndProfile();
-      }
-
       showToast(res.message, 'success');
-      await Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]);
+      applyOptimisticIncomeChange('add', res.income);
     } catch (error) {
+      document.getElementById('detail-amount').value = amount;
+      document.getElementById('detail-note').value = note;
       showToast(error.message, 'error');
     }
   });
@@ -2406,20 +2511,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const note = document.getElementById('edit-income-note').value;
 
     try {
+      closeEditIncomeModal();
       const res = await apiRequest(`/api/incomes/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ amount, category, date, note }),
       });
-      closeEditIncomeModal();
-      if (res.streak && state.user) {
-        state.user.streakCount = res.streak.streakCount;
-        savePersistentAuth(state.token, state.user);
-        renderUserHeaderAndProfile();
-      }
       showToast(res.message, 'success');
-      await Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]);
+      applyOptimisticIncomeChange('update', res.income);
       if (state.activeTab === 'analytics') {
-        await loadMonthlyAnalytics();
+        loadMonthlyAnalytics();
       }
     } catch (error) {
       showToast(error.message, 'error');
@@ -2453,21 +2553,35 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     try {
+      closeGoalModal();
+      let res;
       if (id) {
-        const res = await apiRequest(`/api/goals/${id}`, {
+        res = await apiRequest(`/api/goals/${id}`, {
           method: 'PUT',
           body: JSON.stringify(payload),
         });
         showToast(res.message || 'Đã cập nhật mục tiêu & tính lại tiền lãi hàng tháng!', 'success');
       } else {
-        const res = await apiRequest('/api/goals', {
+        res = await apiRequest('/api/goals', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
         showToast(res.message || 'Đã tạo mục tiêu tài chính & tính lãi tiết kiệm!', 'success');
       }
-      closeGoalModal();
-      await loadGoals();
+      if (res && res.goal) {
+        if (id) {
+          state.goals = state.goals.map((g) => (g._id === res.goal._id ? res.goal : g));
+        } else {
+          state.goals = [res.goal, ...state.goals];
+        }
+        if (res.goal.isPinned) {
+          state.pinnedGoal = res.goal;
+        }
+        renderHeroGoalBanner();
+        renderGoalsGrid();
+        saveLocalDataCache();
+      }
+      loadGoals();
     } catch (error) {
       showToast(error.message, 'error');
     }

@@ -200,9 +200,8 @@ async function enrichGoalWithProgress(goalDoc) {
     )} VNĐ/ngày trong ${remainingDays} ngày còn lại.`;
   }
 
-  if (goalDoc.status !== status && goalDoc.save) {
-    goalDoc.status = status;
-    await goalDoc.save();
+  if (goal.status !== status && goal._id) {
+    Goal.updateOne({ _id: goal._id }, { $set: { status } }).catch(() => {});
   }
 
   return {
@@ -247,7 +246,9 @@ async function enrichGoalWithProgress(goalDoc) {
 // GET /api/goals - Lấy danh sách mục tiêu + mục tiêu được ghim (Hero Goal)
 exports.getGoals = async (req, res) => {
   try {
-    const goals = await Goal.find({ userId: req.user._id }).sort({ isPinned: -1, createdAt: -1 });
+    const goals = await Goal.find({ userId: req.user._id })
+      .sort({ isPinned: -1, createdAt: -1 })
+      .lean();
     const enrichedGoals = await Promise.all(goals.map((g) => enrichGoalWithProgress(g)));
 
     const pinnedGoal = enrichedGoals.find((g) => g.isPinned) || enrichedGoals[0] || null;

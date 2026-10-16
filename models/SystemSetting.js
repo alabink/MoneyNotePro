@@ -37,7 +37,15 @@ const systemSettingSchema = new mongoose.Schema(
   }
 );
 
-systemSettingSchema.statics.getGlobalSettings = async function () {
+let cachedSettings = null;
+let cachedSettingsAt = 0;
+
+systemSettingSchema.statics.getGlobalSettings = async function (forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && cachedSettings && now - cachedSettingsAt < 60000) {
+    return cachedSettings;
+  }
+
   let settings = await this.findOne({ key: 'global_settings' });
   if (!settings) {
     settings = await this.create({
@@ -45,8 +53,15 @@ systemSettingSchema.statics.getGlobalSettings = async function () {
       categories: DEFAULT_CATEGORIES,
     });
   }
+  cachedSettings = settings;
+  cachedSettingsAt = now;
   return settings;
 };
+
+systemSettingSchema.post('save', function (doc) {
+  cachedSettings = doc;
+  cachedSettingsAt = Date.now();
+});
 
 module.exports = {
   SystemSetting: mongoose.model('SystemSetting', systemSettingSchema),

@@ -1,8 +1,19 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const userAuthCache = global.__moneynote_user_cache || (global.__moneynote_user_cache = new Map());
+const USER_CACHE_TTL_MS = 20000; // 20 giây
+
+const invalidateUserCache = (userId) => {
+  if (!userId) {
+    userAuthCache.clear();
+  } else {
+    userAuthCache.delete(String(userId));
+  }
+};
+
 /**
- * Middleware xác thực người dùng qua JWT (hỗ trợ cả HTTP-Only Cookie và Bearer Header)
+ * Middleware xác thực người dùng qua JWT (hỗ trợ cả HTTP-Only Cookie và Bearer Header + Cache tốc độ cao)
  */
 const verifyToken = async (req, res, next) => {
   try {
@@ -28,9 +39,22 @@ const verifyToken = async (req, res, next) => {
       process.env.JWT_SECRET || 'moneynote_pro_super_secret_jwt_key_2026',
       { ignoreExpiration: true }
     );
-    const user = await User.findById(decoded.id).select('-password');
+
+    const cacheKey = String(decoded.id);
+    const cachedEntry = userAuthCache.get(cacheKey);
+    let user = null;
+
+    if (cachedEntry && Date.now() - cachedEntry.at < USER_CACHE_TTL_MS) {
+      user = cachedEntry.user;
+    } else {
+      user = await User.findById(decoded.id).select('-password').lean();
+      if (user) {
+        userAuthCache.set(cacheKey, { user, at: Date.now() });
+      }
+    }
 
     if (!user) {
+      userAuthCache.delete(cacheKey);
       return res.status(401).json({
         success: false,
         code: 'USER_NOT_FOUND',
@@ -39,6 +63,7 @@ const verifyToken = async (req, res, next) => {
     }
 
     if (user.status === 'banned') {
+      userAuthCache.delete(cacheKey);
       res.clearCookie('token');
       return res.status(403).json({
         success: false,
@@ -74,4 +99,5 @@ const isAdmin = (req, res, next) => {
 module.exports = {
   verifyToken,
   isAdmin,
+  invalidateUserCache,
 };
