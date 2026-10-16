@@ -1,0 +1,2520 @@
+/**
+ * MoneyNote Pro — Frontend Application Controller
+ * Dữ liệu thật 100% do người dùng nhập + Lịch Tháng Tương Tác cho phép bấm vào bất kỳ ngày nào để xem/sửa/thêm note thu nhập ngày cũ
+ */
+
+// ==================== STATE TOÀN CỤC ====================
+const state = {
+  token: localStorage.getItem('moneynote_token') || null,
+  user: null,
+  categories: [
+    { name: 'Lương', color: '#10b981' },
+    { name: 'Freelance', color: '#6366f1' },
+    { name: 'Bán hàng', color: '#f59e0b' },
+    { name: 'Đầu tư', color: '#06b6d4' },
+    { name: 'Thưởng', color: '#ec4899' },
+    { name: 'Khác', color: '#8b5cf6' },
+  ],
+  announcements: [],
+  incomes: [],
+  goals: [],
+  pinnedGoal: null,
+  activeTab: 'home',
+  selectedDate: toInputDateValue(new Date()), // Ngày đang chọn để nhập / sửa note (YYYY-MM-DD)
+  filterBySelectedDate: false, // Có đang lọc danh sách bên dưới theo riêng ngày đã chọn hay không
+  homeCalendarData: null, // Dữ liệu 31 ngày của Lịch Tháng trên trang chủ
+  celebratedGoalIds: new Set(),
+  charts: {
+    daily: null,
+    yearly: null,
+    category: null,
+    adminGrowth: null,
+  },
+};
+
+let incomeSearchTimer = null;
+let adminUserSearchTimer = null;
+
+// ==================== TIỆN ÍCH ĐỊNH DẠNG ====================
+function formatVND(amount) {
+  const num = Number(amount) || 0;
+  return num.toLocaleString('vi-VN') + ' ₫';
+}
+
+function formatNumberDots(value) {
+  const digits = String(value || '').replace(/[^\d]/g, '');
+  if (!digits) return '';
+  return Number(digits).toLocaleString('vi-VN');
+}
+
+function parseCurrencyString(value) {
+  if (typeof value === 'number') return isNaN(value) ? 0 : value;
+  const digits = String(value || '').replace(/[^\d]/g, '');
+  return digits ? Number(digits) : 0;
+}
+
+function formatCurrencyInput(inputEl) {
+  const raw = inputEl.value.replace(/[^\d]/g, '');
+  inputEl.value = raw ? Number(raw).toLocaleString('vi-VN') : '';
+}
+
+function toInputDateValue(dateInput = new Date()) {
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    return dateInput.trim();
+  }
+  const d = new Date(dateInput);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateVN(dateInput) {
+  if (!dateInput) return '—';
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    const [y, m, d] = dateInput.trim().split('-');
+    return `${d}/${m}/${y}`;
+  }
+  const d = new Date(dateInput);
+  return d.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function escapeHtml(str = '') {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function getCategoryColor(categoryName) {
+  const found = state.categories.find(
+    (c) => c.name.toLowerCase() === String(categoryName || '').toLowerCase()
+  );
+  return found ? found.color : '#6366f1';
+}
+
+// ==================== TOAST THÔNG BÁO ====================
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const colors = {
+    success: 'bg-emerald-600 text-white border-emerald-500',
+    error: 'bg-rose-600 text-white border-rose-500',
+    info: 'bg-indigo-600 text-white border-indigo-500',
+    warning: 'bg-amber-500 text-slate-950 border-amber-400',
+  };
+
+  const toast = document.createElement('div');
+  toast.className = `pointer-events-auto flex items-center justify-between gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs sm:text-sm font-semibold transition-all duration-300 ${
+    colors[type] || colors.info
+  }`;
+  toast.innerHTML = `
+    <span>${escapeHtml(message)}</span>
+    <button class="opacity-80 hover:opacity-100 text-xs font-bold" onclick="this.parentElement.remove()">✕</button>
+  `;
+
+  container.appendChild(toast);
+  setTimeout(() => {
+    if (toast.parentElement) toast.remove();
+  }, 3800);
+}
+
+// ==================== PHÁO HOA (CANVAS CONFETTI) ====================
+function triggerGoalConfetti() {
+  if (typeof confetti !== 'function') return;
+  const duration = 2200;
+  const end = Date.now() + duration;
+
+  (function frame() {
+    confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 } });
+    confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 } });
+    if (Date.now() < end) requestAnimationFrame(frame);
+  })();
+}
+
+// ==================== DARK / LIGHT MODE ====================
+function initTheme() {
+  const saved = localStorage.getItem('moneynote_theme');
+  const htmlEl = document.documentElement;
+  if (saved === 'dark') {
+    htmlEl.classList.add('dark');
+  } else {
+    htmlEl.classList.remove('dark');
+  }
+}
+
+function toggleTheme() {
+  const htmlEl = document.documentElement;
+  const isDark = htmlEl.classList.toggle('dark');
+  localStorage.setItem('moneynote_theme', isDark ? 'dark' : 'light');
+
+  if (state.activeTab === 'analytics') {
+    loadMonthlyAnalytics();
+  } else if (state.activeTab === 'admin') {
+    loadAdminOverview();
+  }
+}
+
+// ==================== FETCH API WRAPPER ====================
+async function apiRequest(url, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+
+  if (state.token) {
+    headers['Authorization'] = `Bearer ${state.token}`;
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    if (data.code === 'ACCOUNT_BANNED') {
+      handleForceLogout(data.message);
+    }
+    throw new Error(data.message || 'Có lỗi xảy ra khi kết nối máy chủ.');
+  }
+
+  return data;
+}
+
+// ==================== XÁC THỰC (AUTH & PROFILE) ====================
+function switchAuthTab(tab) {
+  const loginForm = document.getElementById('login-form');
+  const regForm = document.getElementById('register-form');
+  const btnLogin = document.getElementById('tab-btn-login');
+  const btnReg = document.getElementById('tab-btn-register');
+  const headingTitle = document.getElementById('auth-heading-title');
+  const headingSub = document.getElementById('auth-heading-sub');
+  hideAuthError();
+
+  if (tab === 'login') {
+    loginForm.classList.remove('hidden');
+    regForm.classList.add('hidden');
+    btnLogin.className =
+      'px-5 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-900 shadow-sm text-indigo-600 dark:text-indigo-400 transition';
+    btnReg.className =
+      'px-5 py-2 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 transition';
+    headingTitle.textContent = 'Chào mừng bạn quay lại';
+    headingSub.textContent = 'Đăng nhập vào sổ tay tài chính cá nhân của bạn để tiếp tục ghi chép thu nhập.';
+  } else {
+    loginForm.classList.add('hidden');
+    regForm.classList.remove('hidden');
+    btnReg.className =
+      'px-5 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-900 shadow-sm text-indigo-600 dark:text-indigo-400 transition';
+    btnLogin.className =
+      'px-5 py-2 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 transition';
+    headingTitle.textContent = 'Tạo tài khoản MoneyNote Pro';
+    headingSub.textContent = 'Bắt đầu hành trình ghi chép thu nhập thực tế và chinh phục các mục tiêu tài chính.';
+  }
+}
+
+function showAuthError(msg) {
+  const box = document.getElementById('auth-error-box');
+  const text = document.getElementById('auth-error-text');
+  text.textContent = msg;
+  box.classList.remove('hidden');
+}
+
+function hideAuthError() {
+  document.getElementById('auth-error-box').classList.add('hidden');
+}
+
+async function submitLogin(email, password) {
+  hideAuthError();
+  try {
+    const res = await apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+
+    state.token = res.token;
+    localStorage.setItem('moneynote_token', res.token);
+    state.user = res.user;
+
+    showToast(`Xin chào, ${res.user.fullName}!`, 'success');
+    await bootstrapAuthenticatedApp();
+  } catch (error) {
+    showAuthError(error.message);
+    showToast(error.message, 'error');
+  }
+}
+
+function handleForceLogout(reasonMessage) {
+  state.token = null;
+  state.user = null;
+  localStorage.removeItem('moneynote_token');
+  document.getElementById('app-view').classList.add('hidden');
+  document.getElementById('auth-view').classList.remove('hidden');
+  if (reasonMessage) {
+    showAuthError(reasonMessage);
+  }
+}
+
+async function handleLogout() {
+  try {
+    await apiRequest('/api/auth/logout', { method: 'POST' });
+  } catch (_) {}
+  handleForceLogout();
+  showToast('Đã đăng xuất khỏi tài khoản.', 'info');
+}
+
+// ==================== KHỞI TẠO GIAO DIỆN SAU ĐĂNG NHẬP ====================
+async function bootstrapAuthenticatedApp() {
+  try {
+    const meData = await apiRequest('/api/auth/me');
+    state.user = meData.user;
+    state.announcements = meData.announcements || [];
+    if (Array.isArray(meData.categories) && meData.categories.length > 0) {
+      state.categories = meData.categories;
+    }
+
+    document.getElementById('auth-view').classList.add('hidden');
+    document.getElementById('app-view').classList.remove('hidden');
+
+    const now = new Date();
+    const todayStr = toInputDateValue(now);
+    state.selectedDate = todayStr;
+    state.filterBySelectedDate = false;
+
+    document.getElementById('home-cal-month').value = String(now.getMonth() + 1);
+    document.getElementById('home-cal-year').value = String(now.getFullYear());
+    document.getElementById('analytics-month').value = String(now.getMonth() + 1);
+    document.getElementById('analytics-year').value = String(now.getFullYear());
+
+    renderUserHeaderAndProfile();
+    renderBroadcastAnnouncements();
+    populateCategorySelects();
+    updateSelectedDateUI();
+
+    await Promise.all([loadGoals(), loadHomeCalendar(), loadIncomes()]);
+
+    switchMainTab('home');
+    if (window.lucide) lucide.createIcons();
+  } catch (error) {
+    handleForceLogout();
+  }
+}
+
+function getSafeFlaticonAvatar(avatarUrl, role = 'user') {
+  const defaultIcon =
+    role === 'admin'
+      ? 'https://cdn-icons-png.flaticon.com/512/2202/2202112.png'
+      : 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
+  if (!avatarUrl || String(avatarUrl).includes('dicebear.com')) {
+    return defaultIcon;
+  }
+  return avatarUrl;
+}
+
+function renderUserHeaderAndProfile() {
+  if (!state.user) return;
+  const u = state.user;
+  const avatarSrc = getSafeFlaticonAvatar(u.avatar, u.role);
+
+  document.getElementById('header-user-name').textContent = u.fullName;
+  document.getElementById('header-user-avatar').src = avatarSrc;
+  document.getElementById('header-streak-count').textContent = u.streakCount || 0;
+
+  const roleBadge = document.getElementById('nav-role-badge');
+  roleBadge.textContent = u.role.toUpperCase();
+  if (u.role === 'admin') {
+    roleBadge.className =
+      'text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
+    document.getElementById('nav-tab-admin').classList.remove('hidden');
+    document.getElementById('mobile-tab-admin').classList.remove('hidden');
+  } else {
+    roleBadge.className =
+      'text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300';
+    document.getElementById('nav-tab-admin').classList.add('hidden');
+    document.getElementById('mobile-tab-admin').classList.add('hidden');
+  }
+
+  document.getElementById('profile-preview-avatar').src = avatarSrc;
+  document.getElementById('profile-display-name').textContent = u.fullName;
+  document.getElementById('profile-display-email').textContent = u.email;
+  document.getElementById('profile-display-role').textContent =
+    u.role === 'admin' ? '👑 QUẢN TRỊ VIÊN (ADMIN)' : '👤 NGƯỜI DÙNG (USER)';
+  document.getElementById('profile-display-streak').textContent = `🔥 Chuỗi ${u.streakCount || 0} ngày liên tiếp`;
+  document.getElementById('profile-fullname').value = u.fullName;
+  document.getElementById('profile-avatar').value = avatarSrc;
+}
+
+function renderBroadcastAnnouncements() {
+  const bar = document.getElementById('system-announcement-bar');
+  const contentEl = document.getElementById('announcement-list-content');
+
+  if (!state.announcements || state.announcements.length === 0) {
+    bar.classList.add('hidden');
+    return;
+  }
+
+  bar.classList.remove('hidden');
+  contentEl.innerHTML = state.announcements
+    .map(
+      (a) => `
+      <div class="flex items-center gap-2 shrink-0 pr-4">
+        <span class="px-2 py-0.5 rounded-full bg-white/20 font-bold text-xs">${escapeHtml(a.title)}</span>
+        <span class="text-indigo-50">${escapeHtml(a.content)}</span>
+      </div>
+    `
+    )
+    .join('<span class="text-white/40">|</span>');
+}
+
+function populateCategorySelects() {
+  const detailSelect = document.getElementById('detail-category');
+  const editSelect = document.getElementById('edit-income-category');
+  const filterSelect = document.getElementById('filter-category');
+
+  const optionsHtml = state.categories
+    .map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`)
+    .join('');
+
+  if (detailSelect) detailSelect.innerHTML = optionsHtml;
+  if (editSelect) editSelect.innerHTML = optionsHtml;
+  if (filterSelect) {
+    const currentFilter = filterSelect.value || 'all';
+    filterSelect.innerHTML = `<option value="all">Tất cả danh mục</option>` + optionsHtml;
+    filterSelect.value = currentFilter;
+  }
+}
+
+// ==================== ĐỒNG BỘ NGÀY ĐANG CHỌN & LỊCH THÁNG TƯƠNG TÁC ====================
+function updateSelectedDateUI() {
+  const todayStr = toInputDateValue(new Date());
+  const isToday = state.selectedDate === todayStr;
+  const formatted = formatDateVN(state.selectedDate);
+
+  const displayEl = document.getElementById('active-selected-date-display');
+  if (displayEl) {
+    displayEl.textContent = isToday ? `Hôm nay (${formatted})` : `Ngày ${formatted}`;
+  }
+
+  const quickLabel = document.getElementById('quick-target-date-label');
+  if (quickLabel) {
+    quickLabel.textContent = isToday ? `hôm nay (${formatted})` : formatted;
+  }
+
+  const detailDateInput = document.getElementById('detail-date');
+  if (detailDateInput) {
+    detailDateInput.value = state.selectedDate;
+  }
+
+  const filterPill = document.getElementById('active-date-filter-pill');
+  const filterText = document.getElementById('active-date-filter-text');
+  const btnShowAll = document.getElementById('btn-show-all-dates');
+  const exactDateInput = document.getElementById('filter-exact-date');
+
+  if (state.filterBySelectedDate) {
+    filterPill.classList.remove('hidden');
+    filterText.textContent = `Đang lọc ngày ${formatted}`;
+    btnShowAll.classList.remove('hidden');
+    if (exactDateInput) exactDateInput.value = state.selectedDate;
+  } else {
+    filterPill.classList.add('hidden');
+    btnShowAll.classList.add('hidden');
+    if (exactDateInput) exactDateInput.value = '';
+  }
+}
+
+function onDetailDateChange(newDateStr) {
+  if (!newDateStr) return;
+  state.selectedDate = newDateStr;
+  updateSelectedDateUI();
+  renderHomeCalendarGrid();
+}
+
+function onExactDateFilterChange(newDateStr) {
+  if (!newDateStr) {
+    clearSelectedDateFilter();
+    return;
+  }
+  state.selectedDate = newDateStr;
+  state.filterBySelectedDate = true;
+  updateSelectedDateUI();
+  renderHomeCalendarGrid();
+  loadIncomes();
+}
+
+function clearSelectedDateFilter() {
+  state.filterBySelectedDate = false;
+  updateSelectedDateUI();
+  renderHomeCalendarGrid();
+  loadIncomes();
+}
+
+function selectTodayOnCalendar() {
+  const now = new Date();
+  state.selectedDate = toInputDateValue(now);
+  state.filterBySelectedDate = false;
+  document.getElementById('home-cal-month').value = String(now.getMonth() + 1);
+  document.getElementById('home-cal-year').value = String(now.getFullYear());
+  updateSelectedDateUI();
+  loadHomeCalendar();
+  loadIncomes();
+}
+
+function changeHomeCalendarMonth(delta) {
+  const monthEl = document.getElementById('home-cal-month');
+  const yearEl = document.getElementById('home-cal-year');
+  let m = parseInt(monthEl.value, 10) + delta;
+  let y = parseInt(yearEl.value, 10);
+
+  if (m < 1) {
+    m = 12;
+    y -= 1;
+  } else if (m > 12) {
+    m = 1;
+    y += 1;
+  }
+
+  monthEl.value = String(m);
+  yearEl.value = String(y);
+  loadHomeCalendar();
+}
+
+async function loadHomeCalendar() {
+  try {
+    const month = document.getElementById('home-cal-month').value;
+    const year = document.getElementById('home-cal-year').value;
+    const data = await apiRequest(`/api/incomes/analytics?month=${month}&year=${year}`);
+    state.homeCalendarData = data;
+
+    document.getElementById('home-cal-month-total').textContent = formatVND(data.summary.totalMonth);
+    document.getElementById('home-cal-active-days').textContent = `${data.summary.activeDaysCount}/${data.period.daysInMonth} ngày có thu nhập (${data.summary.totalEntries} note)`;
+
+    renderHomeCalendarGrid();
+  } catch (error) {
+    console.error('Load home calendar error:', error);
+  }
+}
+
+function renderHomeCalendarGrid() {
+  const grid = document.getElementById('home-calendar-grid');
+  if (!grid || !state.homeCalendarData) return;
+
+  const { period, dailySeries, summary } = state.homeCalendarData;
+  const maxDayAmount = summary.bestDay?.total || 0;
+  const todayStr = toInputDateValue(new Date());
+
+  const cells = [];
+  for (let i = 0; i < period.firstDayWeekday; i++) {
+    cells.push(`<div class="h-16 sm:h-20 rounded-2xl bg-transparent"></div>`);
+  }
+
+  for (const dayItem of dailySeries) {
+    const isSelected = dayItem.dateStr === state.selectedDate;
+    const isToday = dayItem.dateStr === todayStr;
+
+    let level = 0;
+    if (dayItem.total > 0 && maxDayAmount > 0) {
+      const ratio = dayItem.total / maxDayAmount;
+      if (ratio >= 0.75) level = 4;
+      else if (ratio >= 0.45) level = 3;
+      else if (ratio >= 0.2) level = 2;
+      else level = 1;
+    }
+
+    const shortMoney =
+      dayItem.total >= 1000000
+        ? `${(dayItem.total / 1000000).toFixed(1).replace('.0', '')}tr`
+        : dayItem.total >= 1000
+        ? `${Math.round(dayItem.total / 1000)}k`
+        : dayItem.total > 0
+        ? `${dayItem.total}`
+        : '';
+
+    cells.push(`
+      <div onclick="onClickCalendarDay('${dayItem.dateStr}')"
+           class="day-cell heatmap-lv-${level} ${
+             isSelected ? 'day-cell-selected' : ''
+           } h-16 sm:h-20 p-2 rounded-2xl border flex flex-col justify-between cursor-pointer relative"
+           title="Click để xem / sửa hoặc thêm note thu nhập ngày ${formatDateVN(dayItem.dateStr)}">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-extrabold flex items-center gap-1">
+            ${String(dayItem.day).padStart(2, '0')}
+            ${
+              isToday
+                ? `<span class="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block" title="Hôm nay"></span>`
+                : ''
+            }
+          </span>
+          ${
+            dayItem.count > 0
+              ? `<span class="text-[10px] px-1.5 py-0.2 rounded-full bg-black/15 font-bold">${dayItem.count} note</span>`
+              : `<span class="text-[10px] opacity-35 hover:opacity-80">✏️</span>`
+          }
+        </div>
+
+        <div class="text-right">
+          ${
+            dayItem.total > 0
+              ? `<span class="text-xs font-black tracking-tight">+${shortMoney}</span>`
+              : `<span class="text-[10px] opacity-40">Trống</span>`
+          }
+        </div>
+      </div>
+    `);
+  }
+
+  grid.innerHTML = cells.join('');
+}
+
+/**
+ * Khi người dùng bấm vào BẤT KỲ NGÀY NÀO trong tháng trên Lịch:
+ * 1. Chọn ngày đó làm ngày hoạt động (selectedDate)
+ * 2. Lọc danh sách ghi chú bên dưới theo ngày đó
+ * 3. Mở ngay hộp thoại Sổ Tay Chi Tiết Ngày (Day Inspector Modal) để sửa trực tiếp các note cũ hoặc thêm mới!
+ */
+async function onClickCalendarDay(dateStr) {
+  state.selectedDate = dateStr;
+  state.filterBySelectedDate = true;
+  updateSelectedDateUI();
+  renderHomeCalendarGrid();
+  await loadIncomes();
+  await openDayInspectorModal(dateStr);
+}
+
+// ==================== MODAL SỔ TAY CHI TIẾT CỦA NGÀY BẤT KỲ (#day-inspector-modal) ====================
+async function openDayInspectorModal(dateStr) {
+  const targetDate = dateStr || state.selectedDate;
+  state.selectedDate = targetDate;
+  updateSelectedDateUI();
+
+  const modal = document.getElementById('day-inspector-modal');
+  const titleEl = document.getElementById('day-modal-title');
+  const subEl = document.getElementById('day-modal-subtitle');
+  const addDateLabel = document.getElementById('day-modal-add-date-label');
+  const container = document.getElementById('day-modal-notes-container');
+
+  titleEl.textContent = `Sổ Tay Ngày ${formatDateVN(targetDate)}`;
+  addDateLabel.textContent = formatDateVN(targetDate);
+  modal.classList.remove('hidden');
+
+  container.innerHTML = `<div class="p-6 text-center text-xs text-slate-400">Đang tải ghi chú của ngày ${formatDateVN(targetDate)}...</div>`;
+
+  try {
+    const data = await apiRequest(`/api/incomes?date=${targetDate}`);
+    const notes = data.incomes || [];
+    subEl.textContent =
+      notes.length > 0
+        ? `Có ${notes.length} khoản thu nhập trong ngày ${formatDateVN(targetDate)} — Tổng: ${formatVND(
+            data.totalAmount
+          )}`
+        : `Chưa có ghi chú nào trong ngày ${formatDateVN(targetDate)}. Bạn có thể thêm bổ sung bên dưới!`;
+
+    renderDayModalNotes(notes, targetDate);
+  } catch (error) {
+    container.innerHTML = `<p class="text-xs text-rose-500 p-4">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function renderDayModalNotes(notes, targetDate) {
+  const container = document.getElementById('day-modal-notes-container');
+  if (!container) return;
+
+  if (!notes || notes.length === 0) {
+    container.innerHTML = `
+      <div class="p-8 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-1">
+        <p class="text-sm font-bold text-slate-600 dark:text-slate-300">Ngày ${formatDateVN(targetDate)} chưa có bản ghi thu nhập nào</p>
+        <p class="text-xs text-slate-400">Hãy gõ nhanh một dòng ở ô bên dưới để thêm thu nhập cho ngày này.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const catOptions = state.categories
+    .map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`)
+    .join('');
+
+  container.innerHTML = notes
+    .map((item) => {
+      return `
+        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 space-y-3">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span class="font-bold text-indigo-600 dark:text-indigo-400">✏️ Chỉnh sửa trực tiếp ghi chú</span>
+            <button type="button" onclick="deleteNoteFromDayModal('${item._id}', '${targetDate}')"
+              class="text-rose-500 hover:underline font-bold flex items-center gap-1">
+              <span>🗑️ Xóa bản ghi</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+            <div class="sm:col-span-4">
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">Số tiền (VNĐ)</label>
+              <input type="text" id="inline-amt-${item._id}" value="${formatNumberDots(item.amount)}"
+                oninput="formatCurrencyInput(this)"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-extrabold text-emerald-600 dark:text-emerald-400 text-xs sm:text-sm" />
+            </div>
+
+            <div class="sm:col-span-4">
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">Danh mục</label>
+              <select id="inline-cat-${item._id}"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold">
+                ${catOptions}
+              </select>
+            </div>
+
+            <div class="sm:col-span-4">
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">Ngày ghi nhận</label>
+              <input type="date" id="inline-date-${item._id}" value="${toInputDateValue(item.date)}"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm" />
+            </div>
+          </div>
+
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+            <div class="flex-1">
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">Nội dung ghi chú (Note)</label>
+              <input type="text" id="inline-note-${item._id}" value="${escapeHtml(item.note)}"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm" />
+            </div>
+            <button type="button" onclick="saveInlineDayNote('${item._id}', '${targetDate}')"
+              class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shrink-0 transition">
+              💾 Lưu sửa
+            </button>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+
+  // Gán giá trị category hiện tại cho từng select
+  notes.forEach((item) => {
+    const sel = document.getElementById(`inline-cat-${item._id}`);
+    if (sel) sel.value = item.category;
+  });
+}
+
+async function saveInlineDayNote(noteId, currentModalDate) {
+  const amount = document.getElementById(`inline-amt-${noteId}`)?.value;
+  const category = document.getElementById(`inline-cat-${noteId}`)?.value;
+  const date = document.getElementById(`inline-date-${noteId}`)?.value;
+  const note = document.getElementById(`inline-note-${noteId}`)?.value;
+
+  try {
+    const res = await apiRequest(`/api/incomes/${noteId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ amount, category, date, note }),
+    });
+
+    if (res.streak && state.user) {
+      state.user.streakCount = res.streak.streakCount;
+      renderUserHeaderAndProfile();
+    }
+
+    showToast('Đã lưu thay đổi ghi chú thành công!', 'success');
+    await Promise.all([
+      openDayInspectorModal(currentModalDate),
+      loadHomeCalendar(),
+      loadIncomes(),
+      loadGoals(),
+    ]);
+    if (state.activeTab === 'analytics') {
+      await loadMonthlyAnalytics();
+    }
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function deleteNoteFromDayModal(noteId, currentModalDate) {
+  if (!confirm('Bạn có chắc chắn muốn xóa bản ghi thu nhập này?')) return;
+  try {
+    const res = await apiRequest(`/api/incomes/${noteId}`, { method: 'DELETE' });
+    if (res.streak && state.user) {
+      state.user.streakCount = res.streak.streakCount;
+      renderUserHeaderAndProfile();
+    }
+    showToast('Đã xóa ghi chú thu nhập.', 'info');
+    await Promise.all([
+      openDayInspectorModal(currentModalDate),
+      loadHomeCalendar(),
+      loadIncomes(),
+      loadGoals(),
+    ]);
+    if (state.activeTab === 'analytics') {
+      await loadMonthlyAnalytics();
+    }
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+function closeDayInspectorModal() {
+  document.getElementById('day-inspector-modal').classList.add('hidden');
+}
+
+// ==================== CHUYỂN TAB CHÍNH ====================
+function switchMainTab(tabName) {
+  state.activeTab = tabName;
+  const tabs = ['home', 'analytics', 'goals', 'profile', 'admin'];
+
+  tabs.forEach((t) => {
+    const section = document.getElementById(`main-tab-${t}`);
+    const navBtn = document.getElementById(`nav-tab-${t}`);
+    if (section) {
+      section.classList.toggle('hidden', t !== tabName);
+    }
+    if (navBtn) {
+      if (t === tabName) {
+        navBtn.classList.add('bg-white', 'dark:bg-slate-900', 'shadow-sm', 'text-indigo-600', 'dark:text-indigo-400');
+      } else {
+        navBtn.classList.remove('bg-white', 'dark:bg-slate-900', 'shadow-sm', 'text-indigo-600', 'dark:text-indigo-400');
+      }
+    }
+  });
+
+  document.querySelectorAll('.mobile-tab-btn').forEach((btn) => {
+    const isCurrent = btn.getAttribute('data-tab') === tabName;
+    btn.className = isCurrent
+      ? 'mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-indigo-600 text-white'
+      : 'mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800';
+  });
+
+  if (tabName === 'home') {
+    loadHomeCalendar();
+    loadIncomes();
+  } else if (tabName === 'analytics') {
+    loadMonthlyAnalytics();
+  } else if (tabName === 'goals') {
+    loadGoals();
+  } else if (tabName === 'admin' && state.user && state.user.role === 'admin') {
+    loadAdminDashboardAll();
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// ==================== HERO GOAL TRACKER & PACE CALCULATOR ====================
+async function loadGoals() {
+  try {
+    const data = await apiRequest('/api/goals');
+    state.goals = data.goals || [];
+    state.pinnedGoal = data.pinnedGoal || null;
+
+    renderHeroGoalBanner();
+    renderGoalsGrid();
+
+    if (
+      state.pinnedGoal &&
+      state.pinnedGoal.metrics &&
+      state.pinnedGoal.metrics.progressPercent >= 100 &&
+      !state.celebratedGoalIds.has(state.pinnedGoal._id)
+    ) {
+      state.celebratedGoalIds.add(state.pinnedGoal._id);
+      triggerGoalConfetti();
+    }
+  } catch (error) {
+    console.error('Load goals error:', error);
+  }
+}
+
+function renderHeroGoalBanner() {
+  const container = document.getElementById('hero-goal-container');
+  if (!container) return;
+
+  if (!state.pinnedGoal) {
+    container.innerHTML = `
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold mb-2">
+            🎯 MỤC TIÊU TÀI CHÍNH & TIẾT KIỆM LÃI SUẤT (HERO GOAL TRACKER)
+          </span>
+          <h2 class="text-xl sm:text-2xl font-extrabold">Thiết lập mục tiêu & Quản lý tiền tiết kiệm sinh lời</h2>
+          <p class="text-xs sm:text-sm text-slate-300 mt-1">
+            Nhập số tiền bạn đã làm được (VD: Gửi 200 triệu lãi 8% trong 6 tháng = 1,3333%/tháng) kết hợp sổ tay thu nhập hàng ngày. Khi gửi thêm hoặc sửa hạn, hệ thống tự động tính tiếp lãi!
+          </p>
+        </div>
+        <button onclick="openGoalModal()"
+          class="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg transition shrink-0">
+          + Tạo Mục Tiêu & Tính Lãi
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const g = state.pinnedGoal;
+  const m = g.metrics;
+
+  const badgeColors = {
+    completed: 'bg-emerald-400 text-slate-950',
+    ahead: 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40',
+    on_track: 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/40',
+    behind: 'bg-amber-500/25 text-amber-300 border border-amber-400/40',
+    failed: 'bg-rose-500/25 text-rose-300 border border-rose-400/40',
+  };
+
+  const barGradient =
+    m.progressPercent >= 100
+      ? 'from-emerald-400 via-teal-400 to-cyan-400'
+      : m.paceStatus === 'behind'
+      ? 'from-amber-400 via-orange-500 to-rose-500'
+      : 'from-indigo-400 via-emerald-400 to-teal-300';
+
+  const hasSavings = (m.savingsPrincipal || 0) > 0;
+  const rateText = String(m.monthlyInterestRateDisplay || 0).replace('.', ',');
+  const scheduleRows = (m.monthlySchedule || [])
+    .map(
+      (row) => `
+      <tr class="border-b border-white/10 last:border-none text-xs">
+        <td class="py-2 px-2.5 font-bold text-indigo-200">${escapeHtml(row.label)}</td>
+        <td class="py-2 px-2.5 text-slate-300">${formatDateVN(row.date)}</td>
+        <td class="py-2 px-2.5 text-emerald-300 font-semibold">${String(row.ratePercent).replace('.', ',')}%</td>
+        <td class="py-2 px-2.5 text-emerald-400 font-extrabold">+${formatVND(row.interestAmount)}</td>
+        <td class="py-2 px-2.5 text-amber-300 font-bold">+${formatVND(row.cumulativeInterest)}</td>
+        <td class="py-2 px-2.5 text-white font-extrabold text-right">${formatVND(row.totalWithPrincipal)}</td>
+      </tr>
+    `
+    )
+    .join('');
+
+  container.innerHTML = `
+    <div class="relative z-10 space-y-4">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div class="flex flex-wrap items-center gap-2 mb-1.5">
+            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-indigo-200 text-xs font-bold">
+              📌 MỤC TIÊU ĐANG GHIM
+            </span>
+            <span class="px-3 py-1 rounded-full text-xs font-extrabold ${
+              badgeColors[m.paceStatus] || badgeColors.on_track
+            }">
+              ${escapeHtml(m.paceBadge)}
+            </span>
+            <span class="text-xs text-slate-300">
+              📅 ${formatDateVN(g.startDate)} → ${formatDateVN(g.endDate)} (${m.activeDurationMonths} tháng)
+            </span>
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">${escapeHtml(g.title)}</h2>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          ${
+            m.progressPercent >= 100
+              ? `<button onclick="triggerGoalConfetti()" class="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold transition">
+                   🎆 Bắn pháo hoa
+                 </button>`
+              : ''
+          }
+          <button onclick="openEditGoalModal('${g._id}')"
+            class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-extrabold shadow-md transition flex items-center gap-1.5">
+            💰 Gửi thêm tiền / Gia hạn lãi
+          </button>
+          <button onclick="switchMainTab('goals')"
+            class="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition">
+            Quản lý mục tiêu (${state.goals.length})
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-white/5 p-4 sm:p-5 rounded-2xl border border-white/10 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-indigo-200 font-semibold">
+              Tổng tài sản đã đạt (Tiền đã làm được + Lãi tiết kiệm + Thu nhập sổ tay)
+            </p>
+            <div class="flex items-baseline gap-2 mt-0.5">
+              <span class="text-2xl sm:text-3xl font-extrabold text-emerald-400">${formatVND(m.currentAmount)}</span>
+              <span class="text-sm text-slate-300">/ Mục tiêu ${formatVND(m.targetAmount)}</span>
+            </div>
+          </div>
+          <div class="text-right">
+            <span class="text-3xl font-black text-white">${m.overAchievedPercent}%</span>
+            <p class="text-xs text-slate-300">Hoàn thành mục tiêu</p>
+          </div>
+        </div>
+
+        <div class="w-full h-4 rounded-full bg-slate-800 overflow-hidden p-0.5">
+          <div class="h-full rounded-full bg-gradient-to-r ${barGradient} progress-glow transition-all duration-700"
+               style="width: ${Math.min(100, m.progressPercent)}%"></div>
+        </div>
+
+        <!-- Bóc tách 3 nguồn tiền cấu thành Mục tiêu -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30">
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] text-emerald-200 font-bold uppercase">💰 Tiền đã làm được (Tiết kiệm gốc)</p>
+              <button onclick="openEditGoalModal('${g._id}')" class="text-[11px] text-emerald-300 underline hover:text-white font-bold">+Cộng thêm</button>
+            </div>
+            <p class="text-lg font-extrabold text-white mt-1">${formatVND(m.savingsPrincipal || 0)}</p>
+            <p class="text-[11px] text-emerald-200/90 mt-0.5">
+              ${
+                hasSavings
+                  ? `Gửi lãi ${m.interestRate}% / ${m.interestTermMonths} tháng (${rateText}%/tháng)`
+                  : 'Bấm "Gửi thêm tiền" để nhập số tiền đã làm được'
+              }
+            </p>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-amber-500/15 border border-amber-400/30">
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] text-amber-200 font-bold uppercase">📈 Tiền lãi tự động mỗi tháng</p>
+              <span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-200 font-bold">${rateText}% / tháng</span>
+            </div>
+            <p class="text-lg font-extrabold text-amber-300 mt-1">
+              +${formatVND(m.monthlyInterestAmount || 0)} <span class="text-xs font-semibold text-amber-100">/ tháng</span>
+            </p>
+            <p class="text-[11px] text-amber-100/90 mt-0.5">
+              Tổng lãi ${m.activeDurationMonths} tháng: <b class="text-white">+${formatVND(m.totalProjectedInterest || 0)}</b>
+              (Đã tích lũy: +${formatVND(m.accruedInterestToDate || 0)})
+            </p>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-indigo-500/15 border border-indigo-400/30">
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] text-indigo-200 font-bold uppercase">📝 Thu nhập Sổ tay trong kỳ</p>
+              <span class="text-[11px] text-indigo-200 font-semibold">${m.entryCount} bản ghi</span>
+            </div>
+            <p class="text-lg font-extrabold text-indigo-300 mt-1">+${formatVND(m.notepadIncomeAmount || 0)}</p>
+            <p class="text-[11px] text-indigo-200/90 mt-0.5">Tự động cộng từ các ghi chú thu nhập hàng ngày</p>
+          </div>
+        </div>
+
+        ${
+          hasSavings && (m.monthlySchedule || []).length > 0
+            ? `
+            <div class="pt-1">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <button type="button" onclick="toggleGoalMonthlySchedule('hero-schedule-${g._id}')"
+                  class="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-300 hover:text-emerald-200 bg-white/10 px-3 py-1.5 rounded-xl transition">
+                  <span>📊 Xem bảng tính lãi chi tiết từng tháng (${m.activeDurationMonths} tháng • +${formatVND(m.monthlyInterestAmount)}/tháng)</span>
+                </button>
+                <span class="text-[11px] text-slate-300">
+                  💡 Mẹo: Khi gửi thêm tiền hoặc sửa Ngày đáo hạn, bảng lãi dưới đây tự động nối tiếp các tháng mới!
+                </span>
+              </div>
+
+              <div id="hero-schedule-${g._id}" class="mt-3 overflow-x-auto rounded-xl bg-slate-950/60 border border-white/10 p-3">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="border-b border-white/15 text-[11px] uppercase text-slate-400">
+                      <th class="py-1.5 px-2.5">Kỳ tháng</th>
+                      <th class="py-1.5 px-2.5">Ngày nhận lãi</th>
+                      <th class="py-1.5 px-2.5">Lãi suất tháng</th>
+                      <th class="py-1.5 px-2.5">Tiền lãi tháng đó</th>
+                      <th class="py-1.5 px-2.5">Lãi cộng dồn</th>
+                      <th class="py-1.5 px-2.5 text-right">Tổng gốc + Lãi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${scheduleRows}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `
+            : ''
+        }
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+          <div class="p-3 rounded-xl bg-white/5 border border-white/10">
+            <p class="text-[11px] text-slate-300 uppercase">Số tiền còn thiếu</p>
+            <p class="text-base font-extrabold text-amber-300 mt-0.5">${formatVND(m.remainingAmount)}</p>
+          </div>
+          <div class="p-3 rounded-xl bg-white/5 border border-white/10">
+            <p class="text-[11px] text-slate-300 uppercase">Số ngày còn lại</p>
+            <p class="text-base font-extrabold text-white mt-0.5">${m.remainingDays} ngày <span class="text-xs font-normal text-slate-300">(trên ${m.totalDays} ngày)</span></p>
+          </div>
+          <div class="p-3 rounded-xl bg-indigo-500/20 border border-indigo-400/30 sm:col-span-2">
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] text-indigo-200 font-bold uppercase">⚡ MÁY TÍNH TỐC ĐỘ KIẾM TIỀN (PACE CALCULATOR)</p>
+              <span class="text-[11px] text-emerald-300 font-semibold">Hiện tại: ${formatVND(m.actualDailyPace)}/ngày</span>
+            </div>
+            <p class="text-xs sm:text-sm font-bold text-white mt-1">
+              ${escapeHtml(m.paceMessage)}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleGoalMonthlySchedule(elementId) {
+  const el = document.getElementById(elementId);
+  if (el) {
+    el.classList.toggle('hidden');
+  }
+}
+
+function renderGoalsGrid() {
+  const grid = document.getElementById('goals-grid-list');
+  if (!grid) return;
+
+  if (!state.goals || state.goals.length === 0) {
+    grid.innerHTML = `
+      <div class="md:col-span-2 bg-white dark:bg-slate-900 rounded-3xl p-10 text-center border border-slate-200 dark:border-slate-800">
+        <p class="text-slate-500 text-sm mb-4">Bạn chưa tạo mục tiêu tài chính nào.</p>
+        <button onclick="openGoalModal()" class="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold">+ Tạo Mục Tiêu & Tính Lãi Tiết Kiệm</button>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = state.goals
+    .map((g) => {
+      const m = g.metrics;
+      const rateText = String(m.monthlyInterestRateDisplay || 0).replace('.', ',');
+      return `
+        <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 border ${
+          g.isPinned
+            ? 'border-2 border-indigo-500 shadow-lg shadow-indigo-500/10'
+            : 'border-slate-200 dark:border-slate-800 shadow-sm'
+        } flex flex-col justify-between space-y-4">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2">
+                ${
+                  g.isPinned
+                    ? `<span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 text-[11px] font-bold">📌 Đang ghim Trang chủ</span>`
+                    : `<button onclick="pinGoal('${g._id}')" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition">Ghim lên trang chủ</button>`
+                }
+                <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold">
+                  ${escapeHtml(m.paceBadge)}
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button onclick="openEditGoalModal('${g._id}')" class="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/70 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1" title="Gửi thêm tiền hoặc sửa hạn tính lãi">
+                  💰 Sửa / Gia hạn
+                </button>
+                <button onclick="deleteGoal('${g._id}')" class="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-500" title="Xóa mục tiêu">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </div>
+
+            <h3 class="font-extrabold text-lg">${escapeHtml(g.title)}</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Thời hạn: ${formatDateVN(g.startDate)} → ${formatDateVN(g.endDate)} (${m.activeDurationMonths} tháng • Còn ${m.remainingDays} ngày)
+            </p>
+
+            <div class="mt-4">
+              <div class="flex items-baseline justify-between text-xs mb-1.5">
+                <span class="font-bold text-emerald-600 dark:text-emerald-400 text-base">${formatVND(m.currentAmount)}</span>
+                <span class="text-slate-500">/ ${formatVND(m.targetAmount)} (${m.overAchievedPercent}%)</span>
+              </div>
+              <div class="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500" style="width: ${Math.min(
+                  100,
+                  m.progressPercent
+                )}%"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 text-xs space-y-1.5">
+            <div class="flex justify-between">
+              <span class="text-slate-500">💰 Tiền đã làm được (Tiết kiệm gốc):</span>
+              <b class="text-emerald-600 dark:text-emerald-400">${formatVND(m.savingsPrincipal || 0)}</b>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">📈 Lãi mỗi tháng (${rateText}%/tháng):</span>
+              <b class="text-amber-600 dark:text-amber-400">+${formatVND(m.monthlyInterestAmount || 0)} / tháng</b>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">✨ Tổng lãi (${m.activeDurationMonths} tháng):</span>
+              <b class="text-emerald-600 dark:text-emerald-400">+${formatVND(m.totalProjectedInterest || 0)}</b>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">📝 Thu nhập Sổ tay cộng thêm:</span>
+              <b class="text-indigo-600 dark:text-indigo-400">+${formatVND(m.notepadIncomeAmount || 0)}</b>
+            </div>
+            <div class="border-t border-slate-200 dark:border-slate-700 pt-1.5 flex justify-between">
+              <span class="text-slate-500">Còn thiếu để đạt mục tiêu:</span>
+              <b class="text-rose-600 dark:text-rose-400">${formatVND(m.remainingAmount)}</b>
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// ==================== SMART NOTEPAD & LỊCH SỬ GHI CHÚ ====================
+function clientPreviewSmartSyntax(rawLine) {
+  const previewEl = document.getElementById('quick-parse-preview');
+  if (!rawLine || !rawLine.trim()) {
+    previewEl.innerHTML = `<span class="text-slate-500 dark:text-slate-400">Hỗ trợ: <code class="font-mono-code text-indigo-600 dark:text-indigo-400">500k</code>, <code class="font-mono-code text-indigo-600 dark:text-indigo-400">1tr5</code>, <code class="font-mono-code text-indigo-600 dark:text-indigo-400">2.5tr</code> + nội dung + <code class="font-mono-code text-emerald-600">#Danh_mục</code></span>`;
+    return;
+  }
+
+  let text = rawLine.trim();
+  let tag = null;
+  const tagMatch = text.match(/#([^\s#]+(?:\s+hàng|\s+tư)?)/i);
+  if (tagMatch) {
+    tag = tagMatch[1].replace(/_/g, ' ').trim();
+    text = text.replace(tagMatch[0], '').trim();
+  }
+
+  const tokens = text.split(/\s+/);
+  let amount = null;
+  let amountIdx = -1;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tk = tokens[i].toLowerCase();
+    let val = null;
+
+    const splitMil = tk.match(/^(\d+)(?:tr|trieu|triệu|m|cu|củ)(\d+)$/i);
+    const mil = tk.match(/^(\d+(?:[.,]\d+)?)(?:tr|trieu|triệu|m|cu|củ)$/i);
+    const thou = tk.match(/^(\d+(?:[.,]\d+)?)(?:k|ng|nghin|nghìn)$/i);
+    const dots = /^\d{1,3}([.,]\d{3})+(?:đ|d|vnd)?$/i.test(tk);
+    const plain = tk.match(/^(\d{4,12})(?:đ|d|vnd)?$/i);
+
+    if (splitMil) {
+      val = Math.round((parseInt(splitMil[1], 10) + parseInt(splitMil[2], 10) / Math.pow(10, splitMil[2].length)) * 1000000);
+    } else if (mil) {
+      val = Math.round(parseFloat(mil[1].replace(',', '.')) * 1000000);
+    } else if (thou) {
+      val = Math.round(parseFloat(thou[1].replace(',', '.')) * 1000);
+    } else if (dots) {
+      val = parseInt(tk.replace(/[^\d]/g, ''), 10);
+    } else if (plain) {
+      val = parseInt(plain[1], 10);
+    }
+
+    if (val && val > 0) {
+      amount = val;
+      amountIdx = i;
+      break;
+    }
+  }
+
+  const note = tokens.filter((_, idx) => idx !== amountIdx).join(' ').trim() || 'Thu nhập trong ngày';
+  const displayCat = tag || 'Tự động phân loại';
+
+  if (!amount) {
+    previewEl.innerHTML = `<span class="text-amber-600 dark:text-amber-400">⚠️ Hãy nhập số tiền kèm đơn vị (VD: 500k, 1tr5, 2.5tr)...</span>`;
+    return;
+  }
+
+  previewEl.innerHTML = `
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold">
+        +${formatVND(amount)}
+      </span>
+      <span class="px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-semibold">
+        #${escapeHtml(displayCat)}
+      </span>
+      <span class="text-slate-600 dark:text-slate-300 truncate max-w-xs">
+        📝 "${escapeHtml(note)}" (${formatDateVN(state.selectedDate)})
+      </span>
+    </div>
+  `;
+}
+
+function debounceLoadIncomes() {
+  clearTimeout(incomeSearchTimer);
+  incomeSearchTimer = setTimeout(() => {
+    loadIncomes();
+  }, 250);
+}
+
+function resetIncomeFilters() {
+  document.getElementById('filter-search').value = '';
+  document.getElementById('filter-category').value = 'all';
+  state.filterBySelectedDate = false;
+  updateSelectedDateUI();
+  loadIncomes();
+}
+
+async function loadIncomes() {
+  try {
+    const search = document.getElementById('filter-search')?.value || '';
+    const category = document.getElementById('filter-category')?.value || 'all';
+
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('search', search.trim());
+    if (category && category !== 'all') params.set('category', category);
+    if (state.filterBySelectedDate && state.selectedDate) {
+      params.set('date', state.selectedDate);
+    }
+
+    const data = await apiRequest(`/api/incomes?${params.toString()}`);
+    state.incomes = data.incomes || [];
+
+    document.getElementById('notes-count-badge').textContent = data.count || 0;
+    document.getElementById('notes-total-badge').textContent = formatVND(data.totalAmount || 0);
+
+    renderIncomeNotesList();
+  } catch (error) {
+    console.error('Load incomes error:', error);
+  }
+}
+
+function renderIncomeNotesList() {
+  const listEl = document.getElementById('income-notes-list');
+  if (!listEl) return;
+
+  if (!state.incomes || state.incomes.length === 0) {
+    listEl.innerHTML = `
+      <div class="p-10 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-sm space-y-2">
+        <p class="font-semibold text-slate-600 dark:text-slate-300">Chưa có ghi chú thu nhập nào được lưu</p>
+        <p class="text-xs">Hãy nhập thu nhập thực tế của bạn ở khung bên phải hoặc bấm vào một ngày bất kỳ trên Lịch Tháng!</p>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = state.incomes
+    .map((item) => {
+      const catColor = getCategoryColor(item.category);
+      const itemDateStr = toInputDateValue(item.date);
+      return `
+        <div class="group p-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 transition flex items-center justify-between gap-3 shadow-sm">
+          <div class="flex items-start gap-3 min-w-0">
+            <div class="w-2.5 h-10 rounded-full shrink-0 mt-0.5" style="background-color: ${catColor}"></div>
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-extrabold text-emerald-600 dark:text-emerald-400 text-sm sm:text-base">
+                  +${formatVND(item.amount)}
+                </span>
+                <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full text-white" style="background-color: ${catColor}">
+                  #${escapeHtml(item.category)}
+                </span>
+                <button type="button" onclick="openDayInspectorModal('${itemDateStr}')"
+                  class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-mono-code font-bold"
+                  title="Bấm để mở Sổ tay ngày ${formatDateVN(item.date)}">
+                  📅 ${formatDateVN(item.date)}
+                </button>
+              </div>
+              <p class="text-xs sm:text-sm text-slate-700 dark:text-slate-200 font-medium mt-1 break-words">
+                ${escapeHtml(item.note)}
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button onclick="openEditIncomeModal('${item._id}')" title="Sửa ghi chú này"
+              class="px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-300 text-xs font-bold flex items-center gap-1 transition">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Sửa</span>
+            </button>
+            <button onclick="deleteIncomeNote('${item._id}')" title="Xóa ghi chú"
+              class="p-2 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-400 hover:text-rose-600 transition">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function openEditIncomeModal(id) {
+  const item = state.incomes.find((i) => i._id === id);
+  if (!item) return;
+
+  document.getElementById('edit-income-id').value = item._id;
+  document.getElementById('edit-income-amount').value = formatNumberDots(item.amount);
+  document.getElementById('edit-income-category').value = item.category;
+  document.getElementById('edit-income-date').value = toInputDateValue(item.date);
+  document.getElementById('edit-income-note').value = item.note;
+
+  document.getElementById('edit-income-modal').classList.remove('hidden');
+}
+
+function closeEditIncomeModal() {
+  document.getElementById('edit-income-modal').classList.add('hidden');
+}
+
+async function deleteIncomeNote(id) {
+  if (!confirm('Bạn có chắc chắn muốn xóa bản ghi thu nhập này?')) return;
+  try {
+    const res = await apiRequest(`/api/incomes/${id}`, { method: 'DELETE' });
+    if (res.streak && state.user) {
+      state.user.streakCount = res.streak.streakCount;
+      renderUserHeaderAndProfile();
+    }
+    showToast('Đã xóa bản ghi thu nhập.', 'info');
+    await Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]);
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+function exportPersonalData(format = 'csv', onlySelectedMonth = false) {
+  let url = `/api/incomes/export?format=${format}`;
+  if (onlySelectedMonth) {
+    const month = document.getElementById('analytics-month').value;
+    const year = document.getElementById('analytics-year').value;
+    url += `&month=${month}&year=${year}`;
+  }
+  window.open(url, '_blank');
+}
+
+// ==================== THỐNG KÊ THEO THÁNG & CALENDAR HEATMAP ====================
+async function loadMonthlyAnalytics() {
+  try {
+    const month = document.getElementById('analytics-month').value;
+    const year = document.getElementById('analytics-year').value;
+
+    const data = await apiRequest(`/api/incomes/analytics?month=${month}&year=${year}`);
+    const { summary, period, dailySeries, yearlySeries, categorySeries, streak } = data;
+
+    if (streak && state.user) {
+      state.user.streakCount = streak.streakCount;
+      renderUserHeaderAndProfile();
+    }
+
+    document.getElementById('stat-total-month').textContent = formatVND(summary.totalMonth);
+    document.getElementById('stat-total-entries').textContent = `${summary.totalEntries} khoản thu nhập (${summary.activeDaysCount} ngày có thu nhập)`;
+
+    document.getElementById('stat-daily-avg').textContent = formatVND(summary.dailyAverage);
+    document.getElementById('stat-active-days').textContent = `Trung bình trên ${period.elapsedDays} ngày trong tháng ${period.month}/${period.year}`;
+
+    if (summary.bestDay && summary.bestDay.total > 0) {
+      document.getElementById('stat-best-day-amount').textContent = formatVND(summary.bestDay.total);
+      document.getElementById('stat-best-day-date').textContent = `Ngày ${summary.bestDay.day}/${period.month}/${period.year} (${summary.bestDay.count} bản ghi)`;
+    } else {
+      document.getElementById('stat-best-day-amount').textContent = '0 ₫';
+      document.getElementById('stat-best-day-date').textContent = 'Chưa phát sinh thu nhập';
+    }
+
+    const growthEl = document.getElementById('stat-growth-percent');
+    const sign = summary.growthPercent > 0 ? '+' : '';
+    growthEl.textContent = `${sign}${summary.growthPercent}%`;
+    growthEl.className =
+      summary.growthPercent >= 0
+        ? 'text-2xl font-extrabold text-emerald-600 dark:text-emerald-400'
+        : 'text-2xl font-extrabold text-rose-600 dark:text-rose-400';
+    document.getElementById('stat-prev-month').textContent = `Tháng trước: ${formatVND(summary.prevMonthTotal)}`;
+
+    document.getElementById('daily-chart-subtitle').textContent = `Tháng ${period.month}/${period.year}`;
+    document.getElementById('yearly-chart-subtitle').textContent = `Năm ${period.year}`;
+
+    renderDailyAndYearlyCharts(dailySeries, yearlySeries);
+    renderCategoryPieChart(categorySeries);
+    renderCalendarHeatmap(period, dailySeries, summary.bestDay?.total || 0);
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+function renderDailyAndYearlyCharts(dailySeries, yearlySeries) {
+  const isDark = document.documentElement.classList.contains('dark');
+  const textColor = isDark ? '#94a3b8' : '#64748b';
+  const gridColor = isDark ? 'rgba(148, 163, 184, 0.1)' : 'rgba(148, 163, 184, 0.2)';
+
+  const dailyCtx = document.getElementById('dailyIncomeChart').getContext('2d');
+  if (state.charts.daily) state.charts.daily.destroy();
+
+  state.charts.daily = new Chart(dailyCtx, {
+    type: 'bar',
+    data: {
+      labels: dailySeries.map((d) => `Ng.${d.day}`),
+      datasets: [
+        {
+          label: 'Thu nhập ngày (VNĐ)',
+          data: dailySeries.map((d) => d.total),
+          backgroundColor: '#6366f1',
+          borderRadius: 6,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: (ctx) => ` ${formatVND(ctx.raw)}` },
+        },
+      },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } },
+        y: {
+          ticks: {
+            color: textColor,
+            font: { size: 10 },
+            callback: (val) => (val >= 1000000 ? `${val / 1000000}tr` : val >= 1000 ? `${val / 1000}k` : val),
+          },
+          grid: { color: gridColor },
+        },
+      },
+    },
+  });
+
+  const yearlyCtx = document.getElementById('yearlyIncomeChart').getContext('2d');
+  if (state.charts.yearly) state.charts.yearly.destroy();
+
+  state.charts.yearly = new Chart(yearlyCtx, {
+    type: 'bar',
+    data: {
+      labels: yearlySeries.map((m) => `T${m.month}`),
+      datasets: [
+        {
+          label: 'Tổng thu nhập tháng (VNĐ)',
+          data: yearlySeries.map((m) => m.total),
+          backgroundColor: '#10b981',
+          borderRadius: 8,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: (ctx) => ` ${formatVND(ctx.raw)}` },
+        },
+      },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 11 } }, grid: { display: false } },
+        y: {
+          ticks: {
+            color: textColor,
+            font: { size: 10 },
+            callback: (val) => (val >= 1000000 ? `${val / 1000000}tr` : val),
+          },
+          grid: { color: gridColor },
+        },
+      },
+    },
+  });
+}
+
+function renderCategoryPieChart(categorySeries) {
+  const pieCtx = document.getElementById('categoryPieChart').getContext('2d');
+  const listEl = document.getElementById('category-breakdown-list');
+
+  if (state.charts.category) state.charts.category.destroy();
+
+  if (!categorySeries || categorySeries.length === 0) {
+    state.charts.category = new Chart(pieCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Chưa có dữ liệu'],
+        datasets: [{ data: [1], backgroundColor: ['#cbd5e1'] }],
+      },
+      options: { responsive: true, maintainAspectRatio: false },
+    });
+    listEl.innerHTML = `<p class="text-xs text-slate-400 text-center">Chưa có thu nhập trong tháng này</p>`;
+    return;
+  }
+
+  const colors = categorySeries.map((c) => getCategoryColor(c.category));
+
+  state.charts.category = new Chart(pieCtx, {
+    type: 'doughnut',
+    data: {
+      labels: categorySeries.map((c) => c.category),
+      datasets: [
+        {
+          data: categorySeries.map((c) => c.total),
+          backgroundColor: colors,
+          borderWidth: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: { label: (ctx) => ` ${ctx.label}: ${formatVND(ctx.raw)}` },
+        },
+      },
+    },
+  });
+
+  listEl.innerHTML = categorySeries
+    .map((item) => {
+      const color = getCategoryColor(item.category);
+      return `
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full inline-block" style="background-color: ${color}"></span>
+            <span class="font-semibold">${escapeHtml(item.category)}</span>
+            <span class="text-slate-400">(${item.count})</span>
+          </div>
+          <div class="text-right">
+            <span class="font-bold">${formatVND(item.total)}</span>
+            <span class="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-bold text-[10px]">${item.percentage}%</span>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function renderCalendarHeatmap(period, dailySeries, maxDayAmount) {
+  const grid = document.getElementById('calendar-heatmap-grid');
+  if (!grid) return;
+
+  const cells = [];
+
+  for (let i = 0; i < period.firstDayWeekday; i++) {
+    cells.push(`<div class="h-20 rounded-2xl bg-transparent"></div>`);
+  }
+
+  for (const dayItem of dailySeries) {
+    let level = 0;
+    if (dayItem.total > 0 && maxDayAmount > 0) {
+      const ratio = dayItem.total / maxDayAmount;
+      if (ratio >= 0.75) level = 4;
+      else if (ratio >= 0.45) level = 3;
+      else if (ratio >= 0.2) level = 2;
+      else level = 1;
+    }
+
+    const shortMoney =
+      dayItem.total >= 1000000
+        ? `${(dayItem.total / 1000000).toFixed(1).replace('.0', '')}tr`
+        : dayItem.total >= 1000
+        ? `${Math.round(dayItem.total / 1000)}k`
+        : dayItem.total > 0
+        ? `${dayItem.total}`
+        : '';
+
+    const tooltipNotes = dayItem.items
+      .map((n) => `• +${formatVND(n.amount)} [${n.category}]: ${n.note}`)
+      .join('\n');
+
+    cells.push(`
+      <div onclick="openDayInspectorModal('${dayItem.dateStr}')"
+           class="day-cell heatmap-lv-${level} h-20 p-2.5 rounded-2xl border flex flex-col justify-between cursor-pointer"
+           title="${
+             dayItem.total > 0
+               ? `Ngày ${dayItem.day}/${period.month}: ${formatVND(dayItem.total)} (Bấm để sửa note)\n${escapeHtml(tooltipNotes)}`
+               : `Ngày ${dayItem.day}/${period.month}: Bấm để thêm ghi chú thu nhập`
+           }">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-extrabold">${String(dayItem.day).padStart(2, '0')}</span>
+          ${
+            dayItem.count > 0
+              ? `<span class="text-[10px] px-1.5 py-0.2 rounded-full bg-black/15 font-bold">${dayItem.count} note</span>`
+              : `<span class="text-[10px] opacity-35">✏️</span>`
+          }
+        </div>
+        <div class="text-right">
+          ${
+            dayItem.total > 0
+              ? `<span class="text-xs sm:text-sm font-black tracking-tight">+${shortMoney}</span>`
+              : `<span class="text-[10px] opacity-40">—</span>`
+          }
+        </div>
+      </div>
+    `);
+  }
+
+  grid.innerHTML = cells.join('');
+}
+
+// ==================== MODAL MỤC TIÊU TÀI CHÍNH & LÃI SUẤT TIẾT KIỆM ====================
+function addMonthsToDateStr(dateStr, monthsToAdd) {
+  const base = dateStr ? new Date(dateStr) : new Date();
+  if (isNaN(base.getTime())) return toInputDateValue(new Date());
+  const d = new Date(base.getFullYear(), base.getMonth() + Number(monthsToAdd || 0), base.getDate());
+  return toInputDateValue(d);
+}
+
+function calcMonthsDiffClient(startStr, endStr) {
+  if (!startStr || !endStr) return 0;
+  const s = new Date(startStr);
+  const e = new Date(endStr);
+  if (isNaN(s.getTime()) || isNaN(e.getTime()) || e <= s) return 0;
+
+  const yearMonthDiff = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+  const dayDiff = e.getDate() - s.getDate();
+
+  if (Math.abs(dayDiff) <= 2 && yearMonthDiff >= 1) {
+    return yearMonthDiff;
+  }
+  const exactMonths = yearMonthDiff + dayDiff / 30;
+  return Math.max(0, Number(exactMonths.toFixed(2)));
+}
+
+function openGoalModal() {
+  const now = new Date();
+  const todayStr = toInputDateValue(now);
+  const sixMonthsLaterStr = addMonthsToDateStr(todayStr, 6);
+
+  document.getElementById('goal-modal-title').textContent = 'Tạo Mục Tiêu Tài Chính & Tính Lãi Tiết Kiệm';
+  document.getElementById('goal-id').value = '';
+  document.getElementById('goal-title').value = '';
+  document.getElementById('goal-target-amount').value = '';
+  document.getElementById('goal-savings-principal').value = '';
+  document.getElementById('goal-interest-rate').value = '8';
+  document.getElementById('goal-interest-term').value = '6';
+  document.getElementById('goal-additional-deposit').value = '';
+  document.getElementById('goal-additional-deposit-wrap').classList.add('hidden');
+
+  document.getElementById('goal-start-date').value = todayStr;
+  document.getElementById('goal-end-date').value = sixMonthsLaterStr;
+  document.getElementById('goal-is-pinned').checked = true;
+
+  previewGoalInterestCalculator();
+  document.getElementById('goal-modal').classList.remove('hidden');
+}
+
+function openEditGoalModal(goalId) {
+  const goal = state.goals.find((g) => g._id === goalId);
+  if (!goal) return;
+
+  document.getElementById('goal-modal-title').textContent = 'Sửa Mục Tiêu / Gửi Thêm Tiền / Gia Hạn Lãi';
+  document.getElementById('goal-id').value = goal._id;
+  document.getElementById('goal-title').value = goal.title;
+  document.getElementById('goal-target-amount').value = formatNumberDots(goal.targetAmount);
+  document.getElementById('goal-savings-principal').value =
+    goal.savingsPrincipal > 0 ? formatNumberDots(goal.savingsPrincipal) : '';
+  document.getElementById('goal-interest-rate').value =
+    goal.interestRate !== undefined ? goal.interestRate : 8;
+  document.getElementById('goal-interest-term').value =
+    goal.interestTermMonths !== undefined ? goal.interestTermMonths : 6;
+  document.getElementById('goal-additional-deposit').value = '';
+  document.getElementById('goal-additional-deposit-wrap').classList.remove('hidden');
+
+  document.getElementById('goal-start-date').value = toInputDateValue(goal.startDate);
+  document.getElementById('goal-end-date').value = toInputDateValue(goal.endDate);
+  document.getElementById('goal-is-pinned').checked = Boolean(goal.isPinned);
+
+  previewGoalInterestCalculator();
+  document.getElementById('goal-modal').classList.remove('hidden');
+}
+
+function applySampleSavingsPreset() {
+  const titleEl = document.getElementById('goal-title');
+  const targetEl = document.getElementById('goal-target-amount');
+  if (!titleEl.value.trim()) {
+    titleEl.value = 'Tiết kiệm sinh lời & Mục tiêu tài chính';
+  }
+  if (!targetEl.value.trim()) {
+    targetEl.value = formatNumberDots(250000000);
+  }
+  document.getElementById('goal-savings-principal').value = formatNumberDots(200000000);
+  document.getElementById('goal-interest-rate').value = '8';
+  document.getElementById('goal-interest-term').value = '6';
+
+  const startStr = document.getElementById('goal-start-date').value || toInputDateValue(new Date());
+  document.getElementById('goal-start-date').value = startStr;
+  document.getElementById('goal-end-date').value = addMonthsToDateStr(startStr, 6);
+
+  previewGoalInterestCalculator();
+}
+
+function setGoalTermFromStart(months) {
+  const startStr = document.getElementById('goal-start-date').value || toInputDateValue(new Date());
+  document.getElementById('goal-start-date').value = startStr;
+  document.getElementById('goal-end-date').value = addMonthsToDateStr(startStr, months);
+  previewGoalInterestCalculator();
+}
+
+function extendGoalEndDateByMonths(monthsToAdd) {
+  const currentEndStr =
+    document.getElementById('goal-end-date').value ||
+    document.getElementById('goal-start-date').value ||
+    toInputDateValue(new Date());
+  document.getElementById('goal-end-date').value = addMonthsToDateStr(currentEndStr, monthsToAdd);
+  previewGoalInterestCalculator();
+}
+
+function previewGoalInterestCalculator() {
+  const previewBox = document.getElementById('goal-interest-live-preview');
+  if (!previewBox) return;
+
+  const basePrincipal = parseCurrencyString(document.getElementById('goal-savings-principal')?.value || '0');
+  const additionalDeposit = parseCurrencyString(document.getElementById('goal-additional-deposit')?.value || '0');
+  const totalPrincipal = basePrincipal + additionalDeposit;
+
+  const interestRate = Math.max(0, parseFloat(document.getElementById('goal-interest-rate')?.value) || 0);
+  const interestTermMonths = Math.max(1, parseFloat(document.getElementById('goal-interest-term')?.value) || 6);
+
+  const startStr = document.getElementById('goal-start-date')?.value;
+  const endStr = document.getElementById('goal-end-date')?.value;
+  const activeMonths = calcMonthsDiffClient(startStr, endStr);
+
+  const monthlyRatePercent = interestRate / interestTermMonths;
+  const monthlyRateDisplay = Number(monthlyRatePercent.toFixed(4)).toString().replace('.', ',');
+  const monthlyInterestAmount = Math.round(totalPrincipal * (monthlyRatePercent / 100));
+  const totalProjectedInterest = Math.round(totalPrincipal * (monthlyRatePercent / 100) * activeMonths);
+  const totalPrincipalAndInterest = totalPrincipal + totalProjectedInterest;
+
+  if (totalPrincipal <= 0) {
+    previewBox.innerHTML = `
+      <div class="text-slate-500 dark:text-slate-400">
+        💡 Hãy nhập <b>Số tiền đã làm được (Tiết kiệm gốc)</b> hoặc bấm nút <b>"Điền mẫu: Gửi 200 triệu — Lãi 8% / 6 tháng"</b> để xem bảng tính lãi tự động từng tháng.
+      </div>
+    `;
+    return;
+  }
+
+  previewBox.innerHTML = `
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200/70 dark:border-emerald-800/60 pb-1.5">
+      <span class="font-extrabold text-emerald-700 dark:text-emerald-300">
+        🧮 Công thức tính lãi: ${interestRate}% / ${interestTermMonths} tháng = <span class="underline">${monthlyRateDisplay}% / tháng</span>
+      </span>
+      <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[11px]">
+        Kỳ hạn đang chọn: ${activeMonths} tháng
+      </span>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+      <div class="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/70">
+        <p class="text-[10px] uppercase text-slate-400 font-bold">Tổng gốc tiết kiệm</p>
+        <p class="font-extrabold text-slate-800 dark:text-white text-sm">${formatVND(totalPrincipal)}</p>
+        ${
+          additionalDeposit > 0
+            ? `<p class="text-[10px] text-indigo-500 font-semibold">(Đã cộng thêm +${formatVND(additionalDeposit)})</p>`
+            : ''
+        }
+      </div>
+      <div class="p-2 rounded-lg bg-amber-50/80 dark:bg-amber-950/40">
+        <p class="text-[10px] uppercase text-amber-600 dark:text-amber-400 font-bold">Tiền lãi mỗi tháng (${monthlyRateDisplay}%)</p>
+        <p class="font-extrabold text-amber-600 dark:text-amber-400 text-sm">+${formatVND(monthlyInterestAmount)} / tháng</p>
+      </div>
+      <div class="p-2 rounded-lg bg-emerald-50/90 dark:bg-emerald-950/50">
+        <p class="text-[10px] uppercase text-emerald-600 dark:text-emerald-400 font-bold">Tổng lãi sau ${activeMonths} tháng</p>
+        <p class="font-extrabold text-emerald-600 dark:text-emerald-400 text-sm">+${formatVND(totalProjectedInterest)}</p>
+        <p class="text-[10px] text-slate-500">Gốc + Lãi: <b>${formatVND(totalPrincipalAndInterest)}</b></p>
+      </div>
+    </div>
+  `;
+}
+
+function closeGoalModal() {
+  document.getElementById('goal-modal').classList.add('hidden');
+}
+
+async function pinGoal(goalId) {
+  try {
+    const res = await apiRequest(`/api/goals/${goalId}/pin`, { method: 'PATCH' });
+    showToast(res.message, 'success');
+    await loadGoals();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function deleteGoal(goalId) {
+  if (!confirm('Bạn có chắc chắn muốn xóa mục tiêu tài chính này?')) return;
+  try {
+    await apiRequest(`/api/goals/${goalId}`, { method: 'DELETE' });
+    showToast('Đã xóa mục tiêu tài chính.', 'info');
+    await loadGoals();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+// ==================== HỒ SƠ CÁ NHÂN ====================
+function selectPresetAvatar(flaticonUrl) {
+  const url = flaticonUrl && flaticonUrl.startsWith('http')
+    ? flaticonUrl
+    : 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
+  document.getElementById('profile-avatar').value = url;
+  document.getElementById('profile-preview-avatar').src = url;
+}
+
+// ==================== PHÂN HỆ QUẢN TRỊ VIÊN (ADMIN DASHBOARD) ====================
+async function loadAdminDashboardAll() {
+  await Promise.all([
+    loadAdminOverview(),
+    loadAdminUsers(),
+    loadAdminAnnouncements(),
+    loadAdminSettings(),
+  ]);
+}
+
+async function loadAdminOverview() {
+  try {
+    const data = await apiRequest('/api/admin/overview');
+    const { stats, monthlySeries } = data;
+
+    document.getElementById('admin-kpi-users').textContent = `${stats.activeUsers} / ${stats.totalUsers}`;
+    document.getElementById('admin-kpi-users-sub').textContent = `+${stats.newUsersThisMonth} User mới tháng này (${stats.bannedUsers} bị khóa)`;
+
+    document.getElementById('admin-kpi-notes').textContent = stats.totalNotes.toLocaleString('vi-VN');
+    document.getElementById('admin-kpi-notes-sub').textContent = `+${stats.notesThisMonth} bản ghi trong tháng này`;
+
+    document.getElementById('admin-kpi-volume').textContent = formatVND(stats.totalVolume);
+    document.getElementById('admin-kpi-volume-sub').textContent = `Tháng này: ${formatVND(stats.volumeThisMonth)}`;
+
+    document.getElementById('admin-kpi-goals').textContent = stats.totalGoals;
+    document.getElementById('admin-kpi-goals-sub').textContent = `${stats.completedGoals} mục tiêu đã cán đích 100%`;
+
+    const ctx = document.getElementById('adminGrowthChart').getContext('2d');
+    if (state.charts.adminGrowth) state.charts.adminGrowth.destroy();
+
+    const isDark = document.documentElement.classList.contains('dark');
+    const textColor = isDark ? '#94a3b8' : '#64748b';
+
+    state.charts.adminGrowth = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: monthlySeries.map((m) => m.label),
+        datasets: [
+          {
+            label: 'Số bản ghi Notepad được tạo',
+            data: monthlySeries.map((m) => m.notesCount),
+            backgroundColor: '#6366f1',
+            borderRadius: 6,
+          },
+          {
+            label: 'Người dùng đăng ký mới',
+            data: monthlySeries.map((m) => m.newUsers),
+            backgroundColor: '#10b981',
+            borderRadius: 6,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: textColor } },
+        },
+        scales: {
+          x: { ticks: { color: textColor } },
+          y: { ticks: { color: textColor, precision: 0 } },
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Admin overview error:', error);
+  }
+}
+
+function debounceLoadAdminUsers() {
+  clearTimeout(adminUserSearchTimer);
+  adminUserSearchTimer = setTimeout(() => {
+    loadAdminUsers();
+  }, 250);
+}
+
+async function loadAdminUsers() {
+  try {
+    const search = document.getElementById('admin-user-search')?.value || '';
+    const status = document.getElementById('admin-user-status')?.value || 'all';
+    const role = document.getElementById('admin-user-role')?.value || 'all';
+
+    const params = new URLSearchParams({ search, status, role });
+    const data = await apiRequest(`/api/admin/users?${params.toString()}`);
+    const tbody = document.getElementById('admin-users-tbody');
+
+    tbody.innerHTML = (data.users || [])
+      .map((u) => {
+        const isSelf = state.user && String(state.user._id) === String(u._id);
+        const isBanned = u.status === 'banned';
+        const isAdminRole = u.role === 'admin';
+        const safeAvatar = getSafeFlaticonAvatar(u.avatar, u.role);
+
+        return `
+          <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
+            <td class="py-3.5 px-3">
+              <div class="flex items-center gap-2.5">
+                <img src="${escapeHtml(safeAvatar)}" onerror="this.onerror=null;this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';" class="w-9 h-9 rounded-full bg-white border object-cover shrink-0" />
+                <div>
+                  <p class="font-bold text-slate-800 dark:text-slate-100">
+                    ${escapeHtml(u.fullName)}
+                    ${isSelf ? `<span class="text-[10px] text-indigo-500 font-bold">(Bạn)</span>` : ''}
+                  </p>
+                  <p class="text-xs text-slate-400">${escapeHtml(u.email)}</p>
+                </div>
+              </div>
+            </td>
+
+            <td class="py-3.5 px-3">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                  isAdminRole
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                }">
+                  ${u.role}
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                  isBanned
+                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                }">
+                  ${isBanned ? '🚫 Banned' : '● Active'}
+                </span>
+              </div>
+            </td>
+
+            <td class="py-3.5 px-3">
+              <p class="font-bold text-emerald-600 dark:text-emerald-400">${formatVND(u.totalIncome)}</p>
+              <p class="text-[11px] text-slate-400">${u.notesCount} bản ghi • 🔥 ${u.streakCount || 0} ngày</p>
+            </td>
+
+            <td class="py-3.5 px-3 text-xs text-slate-500">
+              ${u.lastLogin ? formatDateVN(u.lastLogin) : 'Chưa đăng nhập'}
+            </td>
+
+            <td class="py-3.5 px-3 text-right">
+              <div class="inline-flex flex-wrap items-center justify-end gap-1.5">
+                <button onclick="adminToggleBan('${u._id}', '${u.status}')" ${isSelf ? 'disabled' : ''}
+                  class="px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                    isBanned
+                      ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                      : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                  } disabled:opacity-40 transition">
+                  ${isBanned ? 'Mở khóa' : 'Khóa (Ban)'}
+                </button>
+
+                <button onclick="adminToggleRole('${u._id}', '${u.role}')" ${isSelf ? 'disabled' : ''}
+                  class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 disabled:opacity-40 transition">
+                  ${isAdminRole ? 'Hạ User' : 'Nâng Admin'}
+                </button>
+
+                <button onclick="adminResetPassword('${u._id}', '${escapeHtml(u.email)}')"
+                  class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 transition">
+                  Reset MK
+                </button>
+
+                <button onclick="adminDeleteUser('${u._id}', '${escapeHtml(u.email)}')" ${isSelf ? 'disabled' : ''}
+                  class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/60 text-rose-600 hover:bg-rose-100 disabled:opacity-40 transition">
+                  Xóa
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function adminToggleBan(userId, currentStatus) {
+  const nextStatus = currentStatus === 'active' ? 'banned' : 'active';
+  try {
+    const res = await apiRequest(`/api/admin/users/${userId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: nextStatus }),
+    });
+    showToast(res.message, nextStatus === 'banned' ? 'warning' : 'success');
+    await Promise.all([loadAdminUsers(), loadAdminOverview()]);
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function adminToggleRole(userId, currentRole) {
+  const nextRole = currentRole === 'admin' ? 'user' : 'admin';
+  try {
+    const res = await apiRequest(`/api/admin/users/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role: nextRole }),
+    });
+    showToast(res.message, 'info');
+    await loadAdminUsers();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function adminResetPassword(userId, email) {
+  const newPassword = prompt(`Nhập mật khẩu mới cho tài khoản "${email}" (tối thiểu 6 ký tự):`, '123456');
+  if (!newPassword) return;
+
+  try {
+    const res = await apiRequest(`/api/admin/users/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    });
+    showToast(res.message, 'success');
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function adminDeleteUser(userId, email) {
+  if (
+    !confirm(
+      `CẢNH BÁO: Bạn có chắc chắn muốn XÓA VĨNH VIỄN tài khoản "${email}" cùng toàn bộ lịch sử thu nhập và mục tiêu của họ?`
+    )
+  ) {
+    return;
+  }
+
+  try {
+    const res = await apiRequest(`/api/admin/users/${userId}`, { method: 'DELETE' });
+    showToast(res.message, 'info');
+    await Promise.all([loadAdminUsers(), loadAdminOverview()]);
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function loadAdminAnnouncements() {
+  try {
+    const data = await apiRequest('/api/admin/announcements');
+    const listEl = document.getElementById('admin-announcements-list');
+    const items = data.announcements || [];
+
+    state.announcements = items.filter((a) => a.isActive);
+    renderBroadcastAnnouncements();
+
+    if (items.length === 0) {
+      listEl.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">Chưa có thông báo hệ thống nào.</p>`;
+      return;
+    }
+
+    listEl.innerHTML = items
+      .map(
+        (a) => `
+        <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                a.isActive
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                  : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+              }">
+                ${a.isActive ? 'Đang hiển thị' : 'Đã tắt'}
+              </span>
+              <h4 class="font-bold text-xs sm:text-sm">${escapeHtml(a.title)}</h4>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${escapeHtml(a.content)}</p>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button onclick="toggleAnnouncementActive('${a._id}', ${!a.isActive})"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200">
+              ${a.isActive ? 'Tắt' : 'Bật'}
+            </button>
+            <button onclick="editAnnouncement('${a._id}', '${escapeHtml(a.title)}', '${escapeHtml(a.content)}', ${a.isActive})"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600">
+              Sửa
+            </button>
+            <button onclick="deleteAnnouncement('${a._id}')"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950 text-rose-600">
+              Xóa
+            </button>
+          </div>
+        </div>
+      `
+      )
+      .join('');
+  } catch (error) {
+    console.error('Load announcements error:', error);
+  }
+}
+
+function editAnnouncement(id, title, content, isActive) {
+  document.getElementById('ann-edit-id').value = id;
+  document.getElementById('ann-title').value = title;
+  document.getElementById('ann-content').value = content;
+  document.getElementById('ann-active').checked = Boolean(isActive);
+  document.getElementById('ann-submit-btn').textContent = 'Cập nhật thông báo';
+  document.getElementById('ann-cancel-btn').classList.remove('hidden');
+}
+
+function resetAnnouncementForm() {
+  document.getElementById('ann-edit-id').value = '';
+  document.getElementById('ann-title').value = '';
+  document.getElementById('ann-content').value = '';
+  document.getElementById('ann-active').checked = true;
+  document.getElementById('ann-submit-btn').textContent = 'Đăng thông báo';
+  document.getElementById('ann-cancel-btn').classList.add('hidden');
+}
+
+async function toggleAnnouncementActive(id, isActive) {
+  try {
+    await apiRequest(`/api/admin/announcements/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ isActive }),
+    });
+    showToast('Đã cập nhật trạng thái thông báo.', 'info');
+    await loadAdminAnnouncements();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function deleteAnnouncement(id) {
+  if (!confirm('Xóa thông báo hệ thống này?')) return;
+  try {
+    await apiRequest(`/api/admin/announcements/${id}`, { method: 'DELETE' });
+    showToast('Đã xóa thông báo hệ thống.', 'info');
+    await loadAdminAnnouncements();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function loadAdminSettings() {
+  try {
+    const data = await apiRequest('/api/admin/settings');
+    state.categories = data.categories || [];
+    populateCategorySelects();
+
+    const listEl = document.getElementById('admin-categories-list');
+    listEl.innerHTML = state.categories
+      .map(
+        (c) => `
+        <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-800">
+          <div class="flex items-center gap-2.5">
+            <span class="w-4 h-4 rounded-full inline-block" style="background-color: ${c.color}"></span>
+            <span class="text-xs font-bold">${escapeHtml(c.name)}</span>
+          </div>
+          <button onclick="deleteSystemCategory('${escapeHtml(c.name)}')"
+            class="text-xs text-rose-500 hover:underline font-semibold">
+            Xóa
+          </button>
+        </div>
+      `
+      )
+      .join('');
+  } catch (error) {
+    console.error('Load admin settings error:', error);
+  }
+}
+
+async function deleteSystemCategory(name) {
+  try {
+    const res = await apiRequest('/api/admin/settings/categories', {
+      method: 'PUT',
+      body: JSON.stringify({ action: 'delete', name }),
+    });
+    state.categories = res.categories;
+    showToast(`Đã xóa danh mục "${name}".`, 'info');
+    await loadAdminSettings();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function resetDefaultCategories() {
+  try {
+    const res = await apiRequest('/api/admin/settings/categories', {
+      method: 'PUT',
+      body: JSON.stringify({ action: 'reset' }),
+    });
+    state.categories = res.categories;
+    showToast('Đã khôi phục danh mục mặc định của hệ thống!', 'success');
+    await loadAdminSettings();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+function exportAdminSystemReport(format = 'json') {
+  window.open(`/api/admin/export?format=${format}`, '_blank');
+}
+
+// ==================== ĐĂNG KÝ SỰ KIỆN FORM (DOM READY) ====================
+document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  if (window.lucide) lucide.createIcons();
+
+  // 1. Form Đăng nhập
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    await submitLogin(email, password);
+  });
+
+  // 2. Form Đăng ký
+  document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideAuthError();
+    const fullName = document.getElementById('reg-fullname').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-password').value;
+
+    try {
+      const res = await apiRequest('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ fullName, email, password }),
+      });
+      state.token = res.token;
+      localStorage.setItem('moneynote_token', res.token);
+      state.user = res.user;
+      showToast('Tạo tài khoản thành công! Hãy bắt đầu nhập thu nhập của bạn.', 'success');
+      await bootstrapAuthenticatedApp();
+    } catch (error) {
+      showAuthError(error.message);
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 3. Ô Gõ Nhanh Smart Notepad (Gắn trực tiếp với ngày đang chọn state.selectedDate)
+  const quickInput = document.getElementById('quick-notepad-input');
+  quickInput.addEventListener('input', (e) => {
+    clientPreviewSmartSyntax(e.target.value);
+  });
+
+  document.getElementById('quick-notepad-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const rawText = quickInput.value.trim();
+    if (!rawText) return;
+
+    try {
+      const res = await apiRequest('/api/incomes/quick', {
+        method: 'POST',
+        body: JSON.stringify({ rawText, date: state.selectedDate }),
+      });
+
+      quickInput.value = '';
+      clientPreviewSmartSyntax('');
+      if (res.streak && state.user) {
+        state.user.streakCount = res.streak.streakCount;
+        renderUserHeaderAndProfile();
+      }
+
+      showToast(res.message, 'success');
+      await Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]);
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 4. Form Gõ Nhanh ngay trong Modal Sổ Tay Ngày (#day-modal-quick-form)
+  document.getElementById('day-modal-quick-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('day-modal-quick-input');
+    const rawText = input.value.trim();
+    if (!rawText) return;
+
+    try {
+      const res = await apiRequest('/api/incomes/quick', {
+        method: 'POST',
+        body: JSON.stringify({ rawText, date: state.selectedDate }),
+      });
+      input.value = '';
+      if (res.streak && state.user) {
+        state.user.streakCount = res.streak.streakCount;
+        renderUserHeaderAndProfile();
+      }
+      showToast(res.message, 'success');
+      await Promise.all([
+        openDayInspectorModal(state.selectedDate),
+        loadHomeCalendar(),
+        loadIncomes(),
+        loadGoals(),
+      ]);
+      if (state.activeTab === 'analytics') {
+        await loadMonthlyAnalytics();
+      }
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 5. Form Nhập Thu nhập Chi tiết
+  document.getElementById('detailed-income-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const amount = document.getElementById('detail-amount').value;
+    const category = document.getElementById('detail-category').value;
+    const date = document.getElementById('detail-date').value;
+    const note = document.getElementById('detail-note').value;
+
+    try {
+      const res = await apiRequest('/api/incomes', {
+        method: 'POST',
+        body: JSON.stringify({ amount, category, date, note }),
+      });
+
+      state.selectedDate = date;
+      updateSelectedDateUI();
+
+      document.getElementById('detail-amount').value = '';
+      document.getElementById('detail-note').value = '';
+
+      if (res.streak && state.user) {
+        state.user.streakCount = res.streak.streakCount;
+        renderUserHeaderAndProfile();
+      }
+
+      showToast(res.message, 'success');
+      await Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]);
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 6. Form Chỉnh sửa Thu nhập (Modal đơn lẻ)
+  document.getElementById('edit-income-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('edit-income-id').value;
+    const amount = document.getElementById('edit-income-amount').value;
+    const category = document.getElementById('edit-income-category').value;
+    const date = document.getElementById('edit-income-date').value;
+    const note = document.getElementById('edit-income-note').value;
+
+    try {
+      const res = await apiRequest(`/api/incomes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ amount, category, date, note }),
+      });
+      closeEditIncomeModal();
+      if (res.streak && state.user) {
+        state.user.streakCount = res.streak.streakCount;
+        renderUserHeaderAndProfile();
+      }
+      showToast(res.message, 'success');
+      await Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]);
+      if (state.activeTab === 'analytics') {
+        await loadMonthlyAnalytics();
+      }
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 7. Form Tạo / Sửa Mục tiêu Tài chính & Tính lãi tiết kiệm
+  document.getElementById('goal-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('goal-id').value;
+    const title = document.getElementById('goal-title').value;
+    const targetAmount = document.getElementById('goal-target-amount').value;
+    const savingsPrincipal = document.getElementById('goal-savings-principal').value;
+    const additionalDeposit = document.getElementById('goal-additional-deposit').value;
+    const interestRate = document.getElementById('goal-interest-rate').value;
+    const interestTermMonths = document.getElementById('goal-interest-term').value;
+    const startDate = document.getElementById('goal-start-date').value;
+    const endDate = document.getElementById('goal-end-date').value;
+    const isPinned = document.getElementById('goal-is-pinned').checked;
+
+    const payload = {
+      title,
+      targetAmount,
+      savingsPrincipal,
+      additionalDeposit,
+      interestRate,
+      interestTermMonths,
+      startDate,
+      endDate,
+      isPinned,
+    };
+
+    try {
+      if (id) {
+        const res = await apiRequest(`/api/goals/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+        showToast(res.message || 'Đã cập nhật mục tiêu & tính lại tiền lãi hàng tháng!', 'success');
+      } else {
+        const res = await apiRequest('/api/goals', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        showToast(res.message || 'Đã tạo mục tiêu tài chính & tính lãi tiết kiệm!', 'success');
+      }
+      closeGoalModal();
+      await loadGoals();
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 8. Form Cập nhật Hồ sơ cá nhân
+  document.getElementById('profile-update-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fullName = document.getElementById('profile-fullname').value;
+    const avatar = document.getElementById('profile-avatar').value;
+
+    try {
+      const res = await apiRequest('/api/auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ fullName, avatar }),
+      });
+      state.user = res.user;
+      renderUserHeaderAndProfile();
+      showToast(res.message, 'success');
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 9. Form Đổi Mật khẩu
+  document.getElementById('change-password-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const currentPassword = document.getElementById('cp-current').value;
+    const newPassword = document.getElementById('cp-new').value;
+    const confirmPassword = document.getElementById('cp-confirm').value;
+
+    if (newPassword !== confirmPassword) {
+      return showToast('Mật khẩu mới và xác nhận mật khẩu không khớp!', 'error');
+    }
+
+    try {
+      const res = await apiRequest('/api/auth/change-password', {
+        method: 'PUT',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      document.getElementById('change-password-form').reset();
+      showToast(res.message, 'success');
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 10. Form Thông báo Hệ thống (Admin)
+  document.getElementById('admin-announcement-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const editId = document.getElementById('ann-edit-id').value;
+    const title = document.getElementById('ann-title').value;
+    const content = document.getElementById('ann-content').value;
+    const isActive = document.getElementById('ann-active').checked;
+
+    try {
+      if (editId) {
+        await apiRequest(`/api/admin/announcements/${editId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ title, content, isActive }),
+        });
+        showToast('Đã cập nhật thông báo hệ thống!', 'success');
+      } else {
+        await apiRequest('/api/admin/announcements', {
+          method: 'POST',
+          body: JSON.stringify({ title, content, isActive }),
+        });
+        showToast('Đã phát thông báo hệ thống mới!', 'success');
+      }
+      resetAnnouncementForm();
+      await loadAdminAnnouncements();
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // 11. Form Thêm Danh mục Mặc định (Admin)
+  document.getElementById('admin-category-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('new-cat-name').value.trim();
+    const color = document.getElementById('new-cat-color').value;
+    if (!name) return;
+
+    try {
+      const res = await apiRequest('/api/admin/settings/categories', {
+        method: 'PUT',
+        body: JSON.stringify({ action: 'add', category: { name, color } }),
+      });
+      state.categories = res.categories;
+      document.getElementById('new-cat-name').value = '';
+      showToast(`Đã thêm danh mục "${name}"!`, 'success');
+      await loadAdminSettings();
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  if (state.token) {
+    bootstrapAuthenticatedApp();
+  }
+});
