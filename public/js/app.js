@@ -2679,6 +2679,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // 12. Phím tắt Esc & Bấm vào khoảng trống bên ngoài (Backdrop) để đóng tất cả hộp thoại Modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const editModal = document.getElementById('edit-income-modal');
+      const goalModal = document.getElementById('goal-modal');
+      const dayModal = document.getElementById('day-inspector-modal');
+
+      if (editModal && !editModal.classList.contains('hidden')) {
+        e.preventDefault();
+        closeEditIncomeModal();
+        return;
+      }
+      if (goalModal && !goalModal.classList.contains('hidden')) {
+        e.preventDefault();
+        closeGoalModal();
+        return;
+      }
+      if (dayModal && !dayModal.classList.contains('hidden')) {
+        e.preventDefault();
+        closeDayInspectorModal();
+        return;
+      }
+    }
+  });
+
   if (state.token) {
     bootstrapAuthenticatedApp();
   }

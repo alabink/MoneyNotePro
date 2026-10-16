@@ -1125,7 +1125,7 @@
        ===================================================================== -->
 
   <!-- MODAL SỔ TAY CHI TIẾT CỦA NGÀY BẤT KỲ KHI CLICK TRÊN LỊCH (#day-inspector-modal) -->
-  <div id="day-inspector-modal" class="fixed inset-0 z-50 hidden bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="day-inspector-modal" onclick="if (event.target === this) closeDayInspectorModal()" class="fixed inset-0 z-50 hidden bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="animate-modal-box bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] flex flex-col">
 
       <!-- Modal Header -->
@@ -1141,7 +1141,8 @@
             </p>
           </div>
         </div>
-        <button onclick="closeDayInspectorModal()" class="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+        <button onclick="closeDayInspectorModal()" title="Đóng (Phím tắt: Esc hoặc bấm ra khoảng trống)" class="px-2.5 py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-white transition">
+          <span class="text-[10px] font-mono-code font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">Esc</span>
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1171,11 +1172,12 @@
   </div>
 
   <!-- MODAL SỬA GHI CHÚ THU NHẬP ĐƠN LẺ -->
-  <div id="edit-income-modal" class="fixed inset-0 z-[60] hidden bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="edit-income-modal" onclick="if (event.target === this) closeEditIncomeModal()" class="fixed inset-0 z-[60] hidden bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="animate-modal-box bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
       <div class="flex items-center justify-between mb-4">
         <h3 class="font-extrabold text-lg">Sửa Ghi Chú Thu Nhập</h3>
-        <button onclick="closeEditIncomeModal()" class="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+        <button onclick="closeEditIncomeModal()" title="Đóng (Phím tắt: Esc hoặc bấm ra khoảng trống)" class="px-2 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-white transition">
+          <span class="text-[10px] font-mono-code font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">Esc</span>
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -1204,7 +1206,7 @@
             class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm"></textarea>
         </div>
         <div class="flex items-center justify-end gap-2 pt-2">
-          <button type="button" onclick="closeEditIncomeModal()" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold">Hủy</button>
+          <button type="button" onclick="closeEditIncomeModal()" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold">Hủy (Esc)</button>
           <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold">Lưu cập nhật</button>
         </div>
       </form>
@@ -1212,14 +1214,15 @@
   </div>
 
   <!-- MODAL TẠO / SỬA MỤC TIÊU TÀI CHÍNH & TIỀN TIẾT KIỆM LÃI SUẤT -->
-  <div id="goal-modal" class="fixed inset-0 z-[60] hidden bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="goal-modal" onclick="if (event.target === this) closeGoalModal()" class="fixed inset-0 z-[60] hidden bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="animate-modal-box bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4">
         <div>
           <h3 id="goal-modal-title" class="font-extrabold text-lg">Tạo Mục Tiêu Tài Chính & Tính Lãi Tiết Kiệm</h3>
           <p class="text-xs text-slate-500 dark:text-slate-400">Nhập số tiền bạn đã làm được (tiết kiệm) và lãi suất để hệ thống tự tính lãi mỗi tháng</p>
         </div>
-        <button onclick="closeGoalModal()" class="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+        <button onclick="closeGoalModal()" title="Đóng (Phím tắt: Esc hoặc bấm ra khoảng trống)" class="px-2 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-white transition">
+          <span class="text-[10px] font-mono-code font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">Esc</span>
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -1344,7 +1347,7 @@
         </label>
 
         <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <button type="button" onclick="closeGoalModal()" class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold">Hủy</button>
+          <button type="button" onclick="closeGoalModal()" class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold">Hủy (Esc)</button>
           <button type="submit" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md shadow-indigo-500/20">
             💾 Lưu Mục Tiêu & Tính Lãi
           </button>
@@ -1354,6 +1357,6 @@
   </div>
 
   <!-- Application Script -->
-  <script src="/js/app.js?v=20261016_fast"></script>
+  <script src="/js/app.js?v=20261016_esc"></script>
 </body>
 </html>
