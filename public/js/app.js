@@ -461,23 +461,48 @@ function getSafeFlaticonAvatar(avatarUrl, role = 'user') {
   return avatarUrl;
 }
 
+function getAdminVerifiedBadgeHtml(sizeClass = 'w-4 h-4') {
+  return `<span title="Tài khoản Quản trị viên xác thực (Admin Verified)" class="inline-flex items-center justify-center shrink-0 align-middle select-none">
+    <svg class="${sizeClass} drop-shadow-[0_1px_3px_rgba(29,155,240,0.45)]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 1.5L14.69 3.69L18.12 3.31L19.19 6.61L22.19 8.38L21.12 11.68L22.5 14.85L19.65 16.82L19.03 20.22L15.58 20.47L13.19 23L10.31 21.12L6.88 21.5L5.81 18.2L2.81 16.43L3.88 13.13L2.5 9.96L5.35 7.99L5.97 4.59L9.42 4.34L12 1.5Z" fill="#1D9BF0"/>
+      <path d="M9.5 12.25L11.25 14L15 9.75" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </span>`;
+}
+
 function renderUserHeaderAndProfile() {
   if (!state.user) return;
   const u = state.user;
+  const isAdmin = u.role === 'admin';
   const avatarSrc = getSafeFlaticonAvatar(u.avatar, u.role);
 
-  document.getElementById('header-user-name').textContent = u.fullName;
+  const headerNameEl = document.getElementById('header-user-name');
+  if (headerNameEl) {
+    headerNameEl.textContent = u.fullName;
+  }
+  const headerVerifiedEl = document.getElementById('header-admin-verified');
+  if (headerVerifiedEl) {
+    if (isAdmin) {
+      headerVerifiedEl.innerHTML = getAdminVerifiedBadgeHtml('w-4 h-4');
+      headerVerifiedEl.classList.remove('hidden');
+    } else {
+      headerVerifiedEl.innerHTML = '';
+      headerVerifiedEl.classList.add('hidden');
+    }
+  }
+
   document.getElementById('header-user-avatar').src = avatarSrc;
   document.getElementById('header-streak-count').textContent = u.streakCount || 0;
 
   const roleBadge = document.getElementById('nav-role-badge');
-  roleBadge.textContent = u.role.toUpperCase();
-  if (u.role === 'admin') {
+  if (isAdmin) {
+    roleBadge.innerHTML = `<span>ADMIN</span> ${getAdminVerifiedBadgeHtml('w-3.5 h-3.5')}`;
     roleBadge.className =
-      'text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
+      'inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 border border-sky-300/60 dark:border-sky-700/60';
     document.getElementById('nav-tab-admin').classList.remove('hidden');
     document.getElementById('mobile-tab-admin').classList.remove('hidden');
   } else {
+    roleBadge.textContent = u.role.toUpperCase();
     roleBadge.className =
       'text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300';
     document.getElementById('nav-tab-admin').classList.add('hidden');
@@ -485,10 +510,25 @@ function renderUserHeaderAndProfile() {
   }
 
   document.getElementById('profile-preview-avatar').src = avatarSrc;
-  document.getElementById('profile-display-name').textContent = u.fullName;
+  const profileNameEl = document.getElementById('profile-display-name');
+  if (profileNameEl) {
+    profileNameEl.innerHTML = isAdmin
+      ? `<span class="inline-flex items-center gap-1.5">${escapeHtml(u.fullName)} ${getAdminVerifiedBadgeHtml('w-5 h-5')}</span>`
+      : escapeHtml(u.fullName);
+  }
   document.getElementById('profile-display-email').textContent = u.email;
-  document.getElementById('profile-display-role').textContent =
-    u.role === 'admin' ? '👑 QUẢN TRỊ VIÊN (ADMIN)' : '👤 NGƯỜI DÙNG (USER)';
+  const profileRoleEl = document.getElementById('profile-display-role');
+  if (profileRoleEl) {
+    if (isAdmin) {
+      profileRoleEl.innerHTML = `<span class="inline-flex items-center gap-1">👑 QUẢN TRỊ VIÊN (ADMIN) ${getAdminVerifiedBadgeHtml('w-3.5 h-3.5')}</span>`;
+      profileRoleEl.className =
+        'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300/60 dark:border-sky-700/60';
+    } else {
+      profileRoleEl.textContent = '👤 NGƯỜI DÙNG (USER)';
+      profileRoleEl.className =
+        'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300';
+    }
+  }
   document.getElementById('profile-display-streak').textContent = `🔥 Chuỗi ${u.streakCount || 0} ngày liên tiếp`;
   document.getElementById('profile-fullname').value = u.fullName;
   document.getElementById('profile-avatar').value = avatarSrc;
@@ -2163,8 +2203,9 @@ async function loadAdminUsers() {
               <div class="flex items-center gap-2.5">
                 <img src="${escapeHtml(safeAvatar)}" onerror="this.onerror=null;this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';" class="w-9 h-9 rounded-full bg-white border object-cover shrink-0" />
                 <div>
-                  <p class="font-bold text-slate-800 dark:text-slate-100">
-                    ${escapeHtml(u.fullName)}
+                  <p class="font-bold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 flex-wrap">
+                    <span>${escapeHtml(u.fullName)}</span>
+                    ${isAdminRole ? getAdminVerifiedBadgeHtml('w-4 h-4') : ''}
                     ${isSelf ? `<span class="text-[10px] text-indigo-500 font-bold">(Bạn)</span>` : ''}
                   </p>
                   <p class="text-xs text-slate-400">${escapeHtml(u.email)}</p>
@@ -2174,12 +2215,13 @@ async function loadAdminUsers() {
 
             <td class="py-3.5 px-3">
               <div class="flex flex-wrap items-center gap-1.5">
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                   isAdminRole
-                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                    ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 border border-sky-300/60 dark:border-sky-700/60'
                     : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                 }">
-                  ${u.role}
+                  <span>${u.role}</span>
+                  ${isAdminRole ? getAdminVerifiedBadgeHtml('w-3 h-3') : ''}
                 </span>
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                   isBanned

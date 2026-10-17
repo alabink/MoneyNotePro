@@ -305,11 +305,12 @@
             </button>
 
             <div onclick="switchMainTab('profile')" title="Hồ sơ cá nhân"
-              class="cursor-pointer shrink-0 flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 hover:border-indigo-400 transition">
+              class="cursor-pointer shrink-0 flex items-center gap-1.5 pl-1.5 pr-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 hover:border-indigo-400 transition">
               <img id="header-user-avatar" src="https://cdn-icons-png.flaticon.com/512/3135/3135715.png" alt="Avatar"
                 onerror="this.onerror=null;this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';"
                 class="w-7 h-7 rounded-full object-cover bg-white border border-slate-200 dark:border-slate-600 shrink-0" />
               <span id="header-user-name" class="text-xs font-bold max-w-[130px] truncate whitespace-nowrap hidden md:inline">Người dùng</span>
+              <span id="header-admin-verified" class="hidden shrink-0"></span>
             </div>
 
             <button onclick="handleLogout()" title="Đăng xuất"
@@ -1381,6 +1382,6 @@
   </div>
 
   <!-- Application Script -->
-  <script src="/js/app.js?v=20261016_loader"></script>
+  <script src="/js/app.js?v=20261017_verified"></script>
 </body>
 </html>
