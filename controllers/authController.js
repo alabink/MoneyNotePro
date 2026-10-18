@@ -187,6 +187,7 @@ exports.getMe = async (req, res) => {
       user,
       announcements,
       categories: settings.categories,
+      expenseCategories: settings.expenseCategories,
     });
   } catch (error) {
     return res.status(500).json({

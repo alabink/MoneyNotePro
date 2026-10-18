@@ -16,6 +16,59 @@ const CATEGORY_ALIASES = [
   { canonical: 'Khác', keywords: ['khac', 'khác', 'other'] },
 ];
 
+const EXPENSE_CATEGORY_ALIASES = [
+  {
+    canonical: 'Ăn uống',
+    keywords: [
+      'an uong', 'ăn uống', 'anuong', 'an sang', 'ăn sáng', 'an trua', 'ăn trưa', 'an toi', 'ăn tối',
+      'com', 'cơm', 'pho', 'phở', 'bun', 'bún', 'mi', 'mì', 'banh mi', 'bánh mì', 'chao', 'cháo',
+      'lau', 'lẩu', 'nuong', 'nướng', 'nhau', 'nhậu', 'do an', 'đồ ăn', 'grabfood', 'shopeefood', 'di cho', 'đi chợ', 'thuc pham', 'thực phẩm',
+    ],
+  },
+  {
+    canonical: 'Giải trí & Cafe',
+    keywords: [
+      'giai tri', 'giải trí', 'giaitri', 'cafe', 'ca phe', 'cà phê', 'tra sua', 'trà sữa', 'trasua',
+      'highland', 'phuc long', 'starbucks', 'xem phim', 'cgv', 'lotte cinema', 'game', 'netflix', 'spotify',
+      'du lich', 'du lịch', 'di choi', 'đi chơi', 'bia', 'bar', 'karaoke',
+    ],
+  },
+  {
+    canonical: 'Di chuyển',
+    keywords: [
+      'di chuyen', 'di chuyển', 'dichuyen', 'xang', 'xăng', 'do xang', 'đổ xăng', 'grab', 'be', 'xanh sm',
+      'taxi', 'xe om', 'xe ôm', 'gui xe', 'gửi xe', 've xe', 'vé xe', 'tau', 'tàu', 'may bay', 'máy bay',
+      'sua xe', 'sửa xe', 'thay nhot', 'thay nhớt', 'rua xe', 'rửa xe', 'di lai', 'đi lại',
+    ],
+  },
+  {
+    canonical: 'Mua sắm',
+    keywords: [
+      'mua sam', 'mua sắm', 'muasam', 'shopee', 'lazada', 'tiktok', 'tiki', 'quan ao', 'quần áo',
+      'ao', 'áo', 'quan', 'quần', 'giay', 'giày', 'dep', 'dép', 'tui', 'túi', 'my pham', 'mỹ phẩm',
+      'son', 'kem', 'sieu thi', 'siêu thị', 'bach hoa', 'bách hóa', 'tap hoa', 'tạp hóa', 'mua do', 'mua đồ',
+    ],
+  },
+  {
+    canonical: 'Hóa đơn & Nhà ở',
+    keywords: [
+      'hoa don', 'hóa đơn', 'hoadon', 'nha o', 'nhà ở', 'tien nha', 'tiền nhà', 'tien tro', 'tiền trọ',
+      'thue nha', 'thuê nhà', 'dien', 'điện', 'tien dien', 'tiền điện', 'nuoc', 'nước', 'tien nuoc',
+      'wifi', 'internet', 'mang', 'mạng', '4g', '5g', 'nap dt', 'nạp đt', 'dien thoai', 'điện thoại',
+      'chung cu', 'chung cư', 'phi dich vu', 'phí dịch vụ', 'rac', 'rác',
+    ],
+  },
+  {
+    canonical: 'Sức khỏe & Học tập',
+    keywords: [
+      'suc khoe', 'sức khỏe', 'suckhoe', 'hoc tap', 'học tập', 'hoctap', 'thuoc', 'thuốc', 'kham benh', 'khám bệnh',
+      'benh vien', 'bệnh viện', 'nha khoa', 'gym', 'yoga', 'the thao', 'thể thao', 'sach', 'sách',
+      'khoa hoc', 'khóa học', 'hoc phi', 'học phí', 'vitamin',
+    ],
+  },
+  { canonical: 'Khác', keywords: ['khac', 'khác', 'other'] },
+];
+
 function removeVietnameseTones(str = '') {
   return str
     .normalize('NFD')
@@ -71,12 +124,55 @@ function resolveCategory(rawTag, noteText = '', availableCategories = []) {
 }
 
 /**
+ * Chuẩn hóa tên danh mục CHI TIÊU từ hashtag hoặc từ khóa tự động
+ */
+function resolveExpenseCategory(rawTag, noteText = '', availableCategories = []) {
+  const customNames = availableCategories.map((c) => (typeof c === 'string' ? c : c.name));
+
+  if (rawTag) {
+    const cleanTag = rawTag.replace(/^#/, '').replace(/_/g, ' ').trim();
+    const normTag = removeVietnameseTones(cleanTag);
+
+    for (const catName of customNames) {
+      if (
+        removeVietnameseTones(catName) === normTag ||
+        removeVietnameseTones(catName).replace(/\s+/g, '') === normTag.replace(/\s+/g, '')
+      ) {
+        return catName;
+      }
+    }
+
+    for (const item of EXPENSE_CATEGORY_ALIASES) {
+      const normCanonical = removeVietnameseTones(item.canonical);
+      if (
+        normCanonical === normTag ||
+        normCanonical.replace(/\s+/g, '') === normTag.replace(/\s+/g, '') ||
+        item.keywords.some((k) => removeVietnameseTones(k).replace(/\s+/g, '') === normTag.replace(/\s+/g, ''))
+      ) {
+        return item.canonical;
+      }
+    }
+
+    return cleanTag.charAt(0).toUpperCase() + cleanTag.slice(1);
+  }
+
+  const normNote = removeVietnameseTones(noteText);
+  for (const item of EXPENSE_CATEGORY_ALIASES) {
+    if (item.keywords.some((kw) => normNote.includes(removeVietnameseTones(kw)))) {
+      return item.canonical;
+    }
+  }
+
+  return 'Ăn uống';
+}
+
+/**
  * Phân tích một token tiền tệ tiếng Việt thành số VNĐ
  * Hỗ trợ: 500k, 1tr5, 1.5tr, 2m5, 2củ5, 15tr, 500.000, 1,500,000, 250000
  */
 function parseAmountToken(token) {
   if (!token) return null;
-  const clean = token.trim().toLowerCase();
+  const clean = token.trim().toLowerCase().replace(/^[-+]/, '');
 
   // Dạng 1: 1tr5, 1m5, 1cu5, 1củ5, 1triệu5 (X triệu Y trăm nghìn)
   const splitMillionMatch = clean.match(/^(\d+)(?:tr|trieu|triệu|m|cu|củ)(\d+)$/i);
@@ -113,7 +209,7 @@ function parseAmountToken(token) {
     return parseInt(plainMatch[1], 10);
   }
 
-  // Dạng 6: Số nhỏ (VD: "500" ở đầu câu ngầm hiểu là 500.000đ nếu < 1000)
+  // Dạng 6: Số nhỏ (VD: "50" hoặc "500" ở đầu câu ngầm hiểu là 50.000đ / 500.000đ nếu < 1000)
   const smallNumMatch = clean.match(/^(\d{1,3})$/);
   if (smallNumMatch) {
     const num = parseInt(smallNumMatch[1], 10);
@@ -124,7 +220,7 @@ function parseAmountToken(token) {
 }
 
 /**
- * Hàm chính bóc tách dòng Smart Notepad
+ * Hàm chính bóc tách dòng Smart Notepad (Thu nhập)
  * @param {string} rawLine Chuỗi người dùng gõ (VD: "500k Làm web cho khách #Freelance")
  * @param {Array} availableCategories Danh mục hệ thống hiện có
  */
@@ -152,7 +248,7 @@ function parseSmartNotepad(rawLine, availableCategories = []) {
   for (let i = 0; i < tokens.length; i++) {
     // Chỉ cho phép đoán số nhỏ (<1000 -> nhân 1000) nếu nằm ở token đầu tiên
     const candidate = tokens[i];
-    if (i > 0 && /^\d{1,3}$/.test(candidate)) continue;
+    if (i > 0 && /^[-+]?\d{1,3}$/.test(candidate)) continue;
 
     const parsed = parseAmountToken(candidate);
     if (parsed && parsed > 0) {
@@ -184,8 +280,67 @@ function parseSmartNotepad(rawLine, availableCategories = []) {
   };
 }
 
+/**
+ * Hàm bóc tách dòng Smart Notepad cho CHI TIÊU HẰNG NGÀY
+ * @param {string} rawLine Chuỗi người dùng gõ (VD: "45k Ăn phở bò sáng #Ăn_uống" hoặc "150k Đổ xăng xe máy")
+ * @param {Array} availableCategories Danh mục chi tiêu hiện có
+ */
+function parseSmartExpenseNotepad(rawLine, availableCategories = []) {
+  if (!rawLine || typeof rawLine !== 'string') {
+    throw new Error('Nội dung dòng chi tiêu nhanh không hợp lệ');
+  }
+
+  let text = rawLine.trim();
+
+  let extractedTag = null;
+  const hashtagRegex = /#([^\s#]+(?:\s+uống|\s+chuyển|\s+sắm|\s+đơn|\s+ở|\s+trí|\s+khỏe|\s+tập)?)/i;
+  const tagMatch = text.match(hashtagRegex);
+  if (tagMatch) {
+    extractedTag = tagMatch[1].trim();
+    text = text.replace(tagMatch[0], '').trim();
+  }
+
+  const tokens = text.split(/\s+/);
+  let amount = null;
+  let amountTokenIndex = -1;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const candidate = tokens[i];
+    if (i > 0 && /^[-+]?\d{1,3}$/.test(candidate)) continue;
+
+    const parsed = parseAmountToken(candidate);
+    if (parsed && parsed > 0) {
+      amount = parsed;
+      amountTokenIndex = i;
+      break;
+    }
+  }
+
+  if (!amount || amount <= 0) {
+    throw new Error(
+      'Không tìm thấy số tiền chi tiêu hợp lệ. Ví dụ cú pháp đúng: "45k Ăn phở bò #Ăn_uống" hoặc "150k Đổ xăng xe máy"'
+    );
+  }
+
+  const noteTokens = tokens.filter((_, idx) => idx !== amountTokenIndex);
+  let note = noteTokens.join(' ').replace(/^[-:–—]+\s*/, '').trim();
+
+  const category = resolveExpenseCategory(extractedTag, note, availableCategories);
+  if (!note) {
+    note = `Chi tiêu ${category}`;
+  }
+
+  return {
+    amount,
+    category,
+    note,
+  };
+}
+
 module.exports = {
   parseSmartNotepad,
+  parseSmartExpenseNotepad,
   parseAmountToken,
   resolveCategory,
+  resolveExpenseCategory,
 };

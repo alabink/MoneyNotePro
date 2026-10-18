@@ -9,6 +9,16 @@ const DEFAULT_CATEGORIES = [
   { name: 'Khác', color: '#8b5cf6', icon: 'sparkles' },
 ];
 
+const DEFAULT_EXPENSE_CATEGORIES = [
+  { name: 'Ăn uống', color: '#f43f5e', icon: 'utensils' },
+  { name: 'Di chuyển', color: '#f97316', icon: 'car' },
+  { name: 'Mua sắm', color: '#ec4899', icon: 'shopping-bag' },
+  { name: 'Hóa đơn & Nhà ở', color: '#8b5cf6', icon: 'receipt' },
+  { name: 'Giải trí & Cafe', color: '#06b6d4', icon: 'coffee' },
+  { name: 'Sức khỏe & Học tập', color: '#10b981', icon: 'heart-pulse' },
+  { name: 'Khác', color: '#64748b', icon: 'tag' },
+];
+
 const systemSettingSchema = new mongoose.Schema(
   {
     key: {
@@ -26,6 +36,16 @@ const systemSettingSchema = new mongoose.Schema(
         },
       ],
       default: DEFAULT_CATEGORIES,
+    },
+    expenseCategories: {
+      type: [
+        {
+          name: { type: String, required: true, trim: true },
+          color: { type: String, default: '#f43f5e' },
+          icon: { type: String, default: 'tag' },
+        },
+      ],
+      default: DEFAULT_EXPENSE_CATEGORIES,
     },
     updatedAt: {
       type: Date,
@@ -51,7 +71,11 @@ systemSettingSchema.statics.getGlobalSettings = async function (forceRefresh = f
     settings = await this.create({
       key: 'global_settings',
       categories: DEFAULT_CATEGORIES,
+      expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
     });
+  } else if (!settings.expenseCategories || settings.expenseCategories.length === 0) {
+    settings.expenseCategories = DEFAULT_EXPENSE_CATEGORIES;
+    await settings.save();
   }
   cachedSettings = settings;
   cachedSettingsAt = now;
@@ -66,4 +90,5 @@ systemSettingSchema.post('save', function (doc) {
 module.exports = {
   SystemSetting: mongoose.model('SystemSetting', systemSettingSchema),
   DEFAULT_CATEGORIES,
+  DEFAULT_EXPENSE_CATEGORIES,
 };

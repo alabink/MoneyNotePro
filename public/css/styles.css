@@ -158,6 +158,62 @@ html.dark body,
   border-color: #34d399;
 }
 
+/* Expense Heatmap Levels (Rose / Orange Tones) */
+.expense-heatmap-lv-0 {
+  background-color: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+.dark .expense-heatmap-lv-0 {
+  background-color: #0f172a;
+  color: #94a3b8;
+  border-color: #1e293b;
+}
+
+.expense-heatmap-lv-1 {
+  background-color: #fff1f2;
+  color: #9f1239;
+  border-color: #fecdd3;
+}
+.dark .expense-heatmap-lv-1 {
+  background-color: rgba(244, 63, 94, 0.16);
+  color: #fda4af;
+  border-color: rgba(244, 63, 94, 0.35);
+}
+
+.expense-heatmap-lv-2 {
+  background-color: #fecdd3;
+  color: #881337;
+  border-color: #fda4af;
+}
+.dark .expense-heatmap-lv-2 {
+  background-color: rgba(244, 63, 94, 0.32);
+  color: #ffe4e6;
+  border-color: rgba(244, 63, 94, 0.5);
+}
+
+.expense-heatmap-lv-3 {
+  background-color: #f43f5e;
+  color: #ffffff;
+  border-color: #e11d48;
+}
+.dark .expense-heatmap-lv-3 {
+  background-color: rgba(244, 63, 94, 0.68);
+  color: #ffffff;
+  border-color: #f43f5e;
+}
+
+.expense-heatmap-lv-4 {
+  background-color: #be123c;
+  color: #ffffff;
+  border-color: #9f1239;
+}
+.dark .expense-heatmap-lv-4 {
+  background-color: #e11d48;
+  color: #ffffff;
+  border-color: #fb7185;
+}
+
 /* ==================== HỆ THỐNG ANIMATION HIỆN ĐẠI ==================== */
 @keyframes pulseGlow {
   0%, 100% {

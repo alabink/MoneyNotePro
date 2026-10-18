@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const IncomeNote = require('../models/IncomeNote');
+const ExpenseNote = require('../models/ExpenseNote');
 const Goal = require('../models/Goal');
 const SystemAnnouncement = require('../models/SystemAnnouncement');
 const { SystemSetting, DEFAULT_CATEGORIES } = require('../models/SystemSetting');
@@ -335,15 +336,16 @@ exports.deleteUserPermanently = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
     }
 
-    const [deletedNotes, deletedGoals] = await Promise.all([
+    const [deletedNotes, deletedExpenses, deletedGoals] = await Promise.all([
       IncomeNote.deleteMany({ userId: user._id }),
+      ExpenseNote.deleteMany({ userId: user._id }),
       Goal.deleteMany({ userId: user._id }),
       User.findByIdAndDelete(user._id),
     ]);
 
     return res.json({
       success: true,
-      message: `Đã xóa vĩnh viễn tài khoản "${user.email}" cùng ${deletedNotes.deletedCount} bản ghi thu nhập và ${deletedGoals.deletedCount} mục tiêu.`,
+      message: `Đã xóa vĩnh viễn tài khoản "${user.email}" cùng ${deletedNotes.deletedCount} khoản thu, ${deletedExpenses.deletedCount} khoản chi và ${deletedGoals.deletedCount} mục tiêu.`,
     });
   } catch (error) {
     return res.status(500).json({

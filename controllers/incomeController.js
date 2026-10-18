@@ -1,4 +1,5 @@
 const IncomeNote = require('../models/IncomeNote');
+const ExpenseNote = require('../models/ExpenseNote');
 const Goal = require('../models/Goal');
 const { SystemSetting } = require('../models/SystemSetting');
 const { parseSmartNotepad } = require('../utils/notepadParser');
@@ -280,21 +281,32 @@ exports.getMonthlyAnalytics = async (req, res) => {
 
     const minQueryDate = startOfPrevMonth < startOfYear ? startOfPrevMonth : startOfYear;
 
-    // Gộp thành 1 query duy nhất lấy toàn bộ bản ghi cần thiết trong năm + tháng trước
-    const allRangeNotes = await IncomeNote.find({
-      userId: req.user._id,
-      date: { $gte: minQueryDate, $lte: endOfYear },
-    })
-      .sort({ date: -1, createdAt: -1 })
-      .lean();
+    // Gộp thành 1 lần truy vấn song song lấy cả Thu nhập và Chi tiêu trong năm + tháng trước
+    const [allRangeNotes, allRangeExpenses] = await Promise.all([
+      IncomeNote.find({
+        userId: req.user._id,
+        date: { $gte: minQueryDate, $lte: endOfYear },
+      })
+        .sort({ date: -1, createdAt: -1 })
+        .lean(),
+      ExpenseNote.find({
+        userId: req.user._id,
+        date: { $gte: minQueryDate, $lte: endOfYear },
+      })
+        .sort({ date: -1, createdAt: -1 })
+        .lean(),
+    ]);
 
     const monthNotes = [];
+    const monthExpenses = [];
     let prevMonthTotal = 0;
     const yearlySeries = Array.from({ length: 12 }, (_, idx) => ({
       month: idx + 1,
       label: `Tháng ${idx + 1}`,
       total: 0,
+      expenseTotal: 0,
       count: 0,
+      expenseCount: 0,
     }));
 
     for (const n of allRangeNotes) {
@@ -314,7 +326,22 @@ exports.getMonthlyAnalytics = async (req, res) => {
       }
     }
 
+    for (const ex of allRangeExpenses) {
+      const t = new Date(ex.date).getTime();
+      if (t >= startOfMonth.getTime() && t <= endOfMonth.getTime()) {
+        monthExpenses.push(ex);
+      }
+      if (t >= startOfYear.getTime() && t <= endOfYear.getTime()) {
+        const mIdx = new Date(ex.date).getMonth();
+        if (yearlySeries[mIdx]) {
+          yearlySeries[mIdx].expenseTotal += ex.amount;
+          yearlySeries[mIdx].expenseCount += 1;
+        }
+      }
+    }
+
     const totalMonth = monthNotes.reduce((sum, n) => sum + n.amount, 0);
+    const totalExpenseMonth = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
 
     let growthPercent = 0;
     if (prevMonthTotal > 0) {
@@ -336,6 +363,9 @@ exports.getMonthlyAnalytics = async (req, res) => {
         total: 0,
         count: 0,
         items: [],
+        expenseTotal: 0,
+        expenseCount: 0,
+        expenseItems: [],
       };
     }
 
@@ -362,6 +392,23 @@ exports.getMonthlyAnalytics = async (req, res) => {
       }
       categoryMap[note.category].total += note.amount;
       categoryMap[note.category].count += 1;
+    }
+
+    for (const exp of monthExpenses) {
+      const dObj = new Date(exp.date);
+      const dayNum = dObj.getDate();
+      if (dailyMap[dayNum]) {
+        dailyMap[dayNum].expenseTotal += exp.amount;
+        dailyMap[dayNum].expenseCount += 1;
+        dailyMap[dayNum].expenseItems.push({
+          _id: exp._id,
+          amount: exp.amount,
+          category: exp.category,
+          note: exp.note,
+          date: exp.date,
+          createdAt: exp.createdAt,
+        });
+      }
     }
 
     const dailySeries = Object.values(dailyMap);
@@ -396,11 +443,15 @@ exports.getMonthlyAnalytics = async (req, res) => {
       },
       summary: {
         totalMonth,
+        totalExpenseMonth,
+        netBalanceMonth: totalMonth - totalExpenseMonth,
         prevMonthTotal,
         growthPercent,
         dailyAverage,
         totalEntries: monthNotes.length,
+        totalExpenseEntries: monthExpenses.length,
         activeDaysCount: dailySeries.filter((d) => d.total > 0).length,
+        expenseActiveDaysCount: dailySeries.filter((d) => d.expenseTotal > 0).length,
         bestDay,
       },
       streak: { streakCount: req.user.streakCount || 0 },

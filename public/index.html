@@ -34,7 +34,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/css/styles.css?v=20261016_loader" />
+  <link rel="stylesheet" href="/css/styles.css?v=20261018_expenses" />
 </head>
 <body class="grid-paper-bg text-slate-800 dark:text-slate-100 min-h-screen flex flex-col">
 
@@ -265,7 +265,12 @@
             <button onclick="switchMainTab('home')" id="nav-tab-home"
               class="nav-tab-btn whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
               <i data-lucide="calendar-days" class="w-4 h-4 shrink-0"></i>
-              <span>Sổ tay & Lịch</span>
+              <span>Sổ tay Thu nhập</span>
+            </button>
+            <button onclick="switchMainTab('expenses')" id="nav-tab-expenses"
+              class="nav-tab-btn whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all text-rose-600 dark:text-rose-400">
+              <i data-lucide="receipt-text" class="w-4 h-4 shrink-0"></i>
+              <span>Chi tiêu hằng ngày</span>
             </button>
             <button onclick="switchMainTab('analytics')" id="nav-tab-analytics"
               class="nav-tab-btn whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
@@ -291,7 +296,7 @@
 
           <!-- Right Actions: Income Streak 🔥 + Dark Mode + Flaticon User Avatar + Logout -->
           <div class="flex items-center gap-2 sm:gap-2.5 shrink-0">
-            <div title="Chuỗi ngày nhập thu nhập liên tiếp (Income Streak)"
+            <div title="Chuỗi ngày ghi chép liên tiếp (Daily Streak)"
               class="whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800/70 text-orange-600 dark:text-orange-400 text-xs font-extrabold">
               <img src="https://cdn-icons-png.flaticon.com/512/426/426833.png" alt="Streak" class="w-4 h-4 object-contain shrink-0 animate-flame" />
               <span id="header-streak-count">0</span>
@@ -322,7 +327,8 @@
 
         <!-- Tablet / Mobile Navigation Bar (< 1024px) -->
         <div class="flex lg:hidden items-center gap-1.5 overflow-x-auto pb-2.5 pt-1">
-          <button onclick="switchMainTab('home')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-indigo-600 text-white" data-tab="home">📅 Sổ tay & Lịch</button>
+          <button onclick="switchMainTab('home')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-indigo-600 text-white" data-tab="home">📅 Sổ tay Thu nhập</button>
+          <button onclick="switchMainTab('expenses')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800 text-rose-600 dark:text-rose-400" data-tab="expenses">💸 Chi tiêu hằng ngày</button>
           <button onclick="switchMainTab('analytics')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800" data-tab="analytics">📊 Thống kê & Biểu đồ</button>
           <button onclick="switchMainTab('goals')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800" data-tab="goals">🎯 Mục tiêu tài chính</button>
           <button onclick="switchMainTab('profile')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800" data-tab="profile">👤 Hồ sơ cá nhân</button>
@@ -410,9 +416,21 @@
 
               <!-- Thanh tóm tắt nhanh của Tháng đang mở -->
               <div class="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 mb-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-800 text-xs">
-                <div class="flex items-center gap-2">
-                  <span class="text-slate-500">Tổng thu nhập tháng đang xem:</span>
-                  <b id="home-cal-month-total" class="text-emerald-600 dark:text-emerald-400 text-sm">0 ₫</b>
+                <div class="flex flex-wrap items-center gap-3">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-slate-500">Tổng thu tháng:</span>
+                    <b id="home-cal-month-total" class="text-emerald-600 dark:text-emerald-400 text-sm">0 ₫</b>
+                  </div>
+                  <span class="text-slate-300 dark:text-slate-700">|</span>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-slate-500">Tổng chi:</span>
+                    <b id="home-cal-month-expense" class="text-rose-600 dark:text-rose-400 text-sm">0 ₫</b>
+                  </div>
+                  <span class="text-slate-300 dark:text-slate-700">|</span>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-slate-500">Còn dư:</span>
+                    <b id="home-cal-month-net" class="text-indigo-600 dark:text-indigo-400 text-sm">0 ₫</b>
+                  </div>
                 </div>
                 <div class="flex items-center gap-2">
                   <span id="home-cal-active-days" class="text-slate-500">0 ngày có ghi chú</span>
@@ -524,6 +542,10 @@
                   class="px-3 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-indigo-50 text-xs font-extrabold shadow-sm transition">
                   ✏️ Sửa note ngày này
                 </button>
+                <button type="button" onclick="switchMainTab('expenses')"
+                  class="px-3 py-1 rounded-xl bg-rose-500/90 hover:bg-rose-600 text-white text-[11px] font-bold shadow-sm transition">
+                  💸 Note Chi tiêu hằng ngày
+                </button>
               </div>
             </div>
 
@@ -606,6 +628,375 @@
                   class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition flex items-center justify-center gap-2">
                   <i data-lucide="plus-circle" class="w-4 h-4"></i>
                   <span>Lưu Vào Sổ Tay</span>
+                </button>
+              </form>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      <!-- =================================================================
+           TAB CHI TIÊU HẰNG NGÀY: SỔ TAY NOTE CHI TIÊU HẰNG NGÀY & CÂN ĐỐI THU CHI
+           ================================================================= -->
+      <section id="main-tab-expenses" class="hidden space-y-6">
+
+        <!-- 1. 4 THẺ TỔNG QUAN CHI TIÊU HẰNG NGÀY & CÂN ĐỐI THU - CHI -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div class="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
+              <span>CHI TIÊU HÔM NAY</span>
+              <span class="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600"><i data-lucide="Flame" class="w-4 h-4"></i></span>
+            </div>
+            <p id="exp-stat-today" class="text-2xl font-extrabold text-rose-600 dark:text-rose-400">0 ₫</p>
+            <p id="exp-stat-today-sub" class="text-xs text-slate-500 dark:text-slate-400 mt-1">0 khoản chi hôm nay</p>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div class="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
+              <span>TỔNG CHI TIÊU THÁNG</span>
+              <span class="p-2 rounded-xl bg-orange-50 dark:bg-orange-950/60 text-orange-600"><i data-lucide="receipt" class="w-4 h-4"></i></span>
+            </div>
+            <p id="exp-stat-month" class="text-2xl font-extrabold text-orange-600 dark:text-orange-400">0 ₫</p>
+            <p id="exp-stat-month-sub" class="text-xs text-slate-500 dark:text-slate-400 mt-1">0 khoản chi trong tháng</p>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div class="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
+              <span>TRUNG BÌNH CHI MỖI NGÀY</span>
+              <span class="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600"><i data-lucide="calculator" class="w-4 h-4"></i></span>
+            </div>
+            <p id="exp-stat-daily-avg" class="text-2xl font-extrabold text-amber-600 dark:text-amber-400">0 ₫</p>
+            <p id="exp-stat-highest-day" class="text-xs text-slate-500 dark:text-slate-400 mt-1">Ngày chi cao nhất: 0 ₫</p>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div class="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
+              <span>SỐ DƯ RÒNG (THU - CHI)</span>
+              <span class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600"><i data-lucide="scale" class="w-4 h-4"></i></span>
+            </div>
+            <p id="exp-stat-net-balance" class="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">0 ₫</p>
+            <p id="exp-stat-net-sub" class="text-xs text-slate-500 dark:text-slate-400 mt-1">Thu tháng: 0 ₫</p>
+          </div>
+        </div>
+
+        <!-- 2. WORKSPACE CHI TIÊU HẰNG NGÀY: LỊCH CHI TIÊU + DANH SÁCH + FORM GÕ NHANH -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+          <!-- CỘT TRÁI (7 CỘT): LỊCH CHI TIÊU HẰNG NGÀY + DANH SÁCH NOTE CHI TIÊU + BIỂU ĐỒ -->
+          <div class="lg:col-span-7 space-y-6">
+
+            <!-- LỊCH CHI TIÊU HẰNG NGÀY (INTERACTIVE EXPENSE CALENDAR) -->
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200/90 dark:border-slate-800">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div class="flex items-center gap-2.5">
+                  <span class="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                    <i data-lucide="calendar-minus" class="w-5 h-5"></i>
+                  </span>
+                  <div>
+                    <h2 class="font-extrabold text-base sm:text-lg">Lịch Chi Tiêu Hằng Ngày — Chọn Ngày Để Xem & Sửa Note Chi</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">
+                      Bấm vào <b>bất kỳ ngày nào trên lịch</b> để xem chi tiết, sửa hoặc ghi thêm khoản chi tiêu của ngày đó
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-1.5 self-start sm:self-auto">
+                  <button type="button" onclick="changeExpenseCalendarMonth(-1)" title="Tháng trước"
+                    class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                  </button>
+                  <div class="flex items-center gap-1">
+                    <select id="exp-cal-month" onchange="loadExpenseCalendar()"
+                      class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold">
+                      <option value="1">Tháng 01</option>
+                      <option value="2">Tháng 02</option>
+                      <option value="3">Tháng 03</option>
+                      <option value="4">Tháng 04</option>
+                      <option value="5">Tháng 05</option>
+                      <option value="6">Tháng 06</option>
+                      <option value="7">Tháng 07</option>
+                      <option value="8">Tháng 08</option>
+                      <option value="9">Tháng 09</option>
+                      <option value="10">Tháng 10</option>
+                      <option value="11">Tháng 11</option>
+                      <option value="12">Tháng 12</option>
+                    </select>
+                    <select id="exp-cal-year" onchange="loadExpenseCalendar()"
+                      class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold">
+                      <option value="2024">2024</option>
+                      <option value="2025">2025</option>
+                      <option value="2026" selected>2026</option>
+                      <option value="2027">2027</option>
+                    </select>
+                  </div>
+                  <button type="button" onclick="changeExpenseCalendarMonth(1)" title="Tháng sau"
+                    class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                  </button>
+                  <button type="button" onclick="selectTodayOnExpenseCalendar()"
+                    class="px-2.5 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 text-xs font-bold hover:bg-rose-100 transition">
+                    Hôm nay
+                  </button>
+                </div>
+              </div>
+
+              <!-- Thanh tóm tắt Chi tiêu của Tháng đang xem -->
+              <div class="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 mb-3 rounded-2xl bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/50 text-xs">
+                <div class="flex items-center gap-2">
+                  <span class="text-slate-600 dark:text-slate-300">Tổng chi tiêu tháng đang xem:</span>
+                  <b id="exp-cal-month-total" class="text-rose-600 dark:text-rose-400 text-sm">0 ₫</b>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span id="exp-cal-active-days" class="text-slate-500">0 ngày có chi tiêu</span>
+                  <span class="text-slate-300 dark:text-slate-700">•</span>
+                  <span class="text-rose-600 dark:text-rose-400 font-semibold">💡 Click vào ngày bất kỳ để sửa hoặc thêm chi tiêu</span>
+                </div>
+              </div>
+
+              <!-- Tiêu đề Thứ trong tuần -->
+              <div class="grid grid-cols-7 gap-1.5 sm:gap-2 text-center text-[11px] font-extrabold text-slate-400 uppercase mb-2">
+                <div>CN</div>
+                <div>T2</div>
+                <div>T3</div>
+                <div>T4</div>
+                <div>T5</div>
+                <div>T6</div>
+                <div>T7</div>
+              </div>
+
+              <!-- Lưới các ngày trong tháng Chi tiêu -->
+              <div id="expense-calendar-grid" class="grid grid-cols-7 gap-1.5 sm:gap-2">
+                <!-- Render từ JS -->
+              </div>
+            </div>
+
+            <!-- DANH SÁCH LỊCH SỬ NOTE CHI TIÊU HẰNG NGÀY -->
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200/90 dark:border-slate-800">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h2 class="font-extrabold text-base sm:text-lg flex items-center gap-2">
+                      <i data-lucide="receipt-text" class="w-5 h-5 text-rose-600 dark:text-rose-400"></i>
+                      <span>Sổ Tay Note Chi Tiêu Hằng Ngày</span>
+                    </h2>
+                    <span id="exp-active-date-filter-pill" class="hidden px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 text-xs font-bold flex items-center gap-1.5">
+                      <span id="exp-active-date-filter-text">Ngày</span>
+                      <button onclick="clearSelectedExpenseDateFilter()" class="hover:text-rose-900 font-extrabold" title="Xem tất cả các ngày">✕</button>
+                    </span>
+                  </div>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Đang hiển thị <b id="exp-notes-count-badge">0</b> khoản chi — Tổng chi:
+                    <b id="exp-notes-total-badge" class="text-rose-600 dark:text-rose-400">0 ₫</b>
+                  </p>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <button id="btn-exp-show-all-dates" onclick="clearSelectedExpenseDateFilter()"
+                    class="hidden px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-xs font-bold transition">
+                    Xem tất cả các ngày
+                  </button>
+                  <button onclick="exportExpenseData('csv')"
+                    class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold flex items-center gap-1.5 transition">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                    <span>Xuất CSV Chi Tiêu</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Bộ lọc Tìm kiếm + Danh mục Chi tiêu + Ngày -->
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-4 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+                <div class="sm:col-span-5 relative">
+                  <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                  <input type="text" id="exp-filter-search" placeholder="Tìm món ăn, hóa đơn, mua sắm..."
+                    oninput="debounceLoadExpenses()"
+                    class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500" />
+                </div>
+                <div class="sm:col-span-3">
+                  <select id="exp-filter-category" onchange="loadExpenses()"
+                    class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500">
+                    <option value="all">Tất cả danh mục chi</option>
+                  </select>
+                </div>
+                <div class="sm:col-span-3">
+                  <input type="date" id="exp-filter-exact-date" onchange="onExactExpenseDateFilterChange(this.value)" title="Lọc theo ngày cụ thể"
+                    class="w-full px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs" />
+                </div>
+                <div class="sm:col-span-1 flex items-center justify-center">
+                  <button onclick="resetExpenseFilters()" title="Xóa bộ lọc"
+                    class="w-full py-2 rounded-xl bg-slate-200/80 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Danh sách các dòng Note Chi tiêu -->
+              <div id="expense-notes-list" class="space-y-2.5 overflow-y-auto max-h-[500px] pr-1">
+                <!-- Render từ JS -->
+              </div>
+            </div>
+
+            <!-- BIỂU ĐỒ CHI TIÊU THEO NGÀY & CƠ CẤU DANH MỤC CHI TIÊU -->
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+              <div class="md:col-span-7 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <h3 class="font-bold text-sm flex items-center gap-2 mb-3">
+                  <i data-lucide="bar-chart-2" class="w-4 h-4 text-rose-600"></i>
+                  <span>Biểu Đồ Chi Tiêu Từng Ngày Trong Tháng</span>
+                </h3>
+                <div class="h-56">
+                  <canvas id="dailyExpenseChart"></canvas>
+                </div>
+              </div>
+
+              <div class="md:col-span-5 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 class="font-bold text-sm flex items-center gap-2 mb-1">
+                    <i data-lucide="pie-chart" class="w-4 h-4 text-orange-500"></i>
+                    <span>Cơ Cấu Danh Mục Chi Tiêu</span>
+                  </h3>
+                  <div class="h-44 flex items-center justify-center mt-2">
+                    <canvas id="expenseCategoryPieChart"></canvas>
+                  </div>
+                </div>
+                <div id="expense-category-breakdown-list" class="mt-3 space-y-1.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <!-- Render từ JS -->
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- CỘT PHẢI (5 CỘT): GÕ NHANH CHI TIÊU 1 DÒNG & FORM CHI TIÊU CHI TIẾT -->
+          <div class="lg:col-span-5 space-y-5">
+
+            <!-- BẢNG ĐIỀU KHIỂN NGÀY ĐANG CHỌN ĐỂ NOTE CHI TIÊU -->
+            <div class="bg-gradient-to-r from-rose-600 via-orange-600 to-amber-600 rounded-3xl p-4 sm:p-5 text-white shadow-md flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center shrink-0">
+                  <i data-lucide="wallet-cards" class="w-5 h-5 text-amber-200"></i>
+                </div>
+                <div>
+                  <p class="text-[11px] uppercase tracking-wider text-rose-100 font-bold">Ngày đang chọn để Note Chi Tiêu</p>
+                  <p id="exp-selected-date-display" class="text-lg font-extrabold">Hôm nay</p>
+                </div>
+              </div>
+              <div class="flex flex-col items-end gap-1.5">
+                <button type="button" onclick="openDayInspectorModal(state.selectedDate)"
+                  class="px-3 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-rose-50 text-xs font-extrabold shadow-sm transition">
+                  ✏️ Sửa note ngày này
+                </button>
+              </div>
+            </div>
+
+            <!-- 1. GÕ NHANH 1 DÒNG CHI TIÊU (SMART EXPENSE NOTEPAD) -->
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200/90 dark:border-slate-800 notepad-surface">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                    <i data-lucide="zap" class="w-4 h-4"></i>
+                  </span>
+                  <div>
+                    <h2 class="font-extrabold text-base">Gõ Nhanh Chi Tiêu 1 Dòng (Smart Notepad)</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">
+                      Lưu khoản chi vào ngày <b id="exp-quick-target-date-label" class="text-rose-600 dark:text-rose-400">hôm nay</b> khi nhấn <kbd class="px-1.5 py-0.5 text-[10px] rounded bg-slate-100 dark:bg-slate-800 border font-mono-code">Enter</kbd>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quick Preset Chips cho Chi tiêu hằng ngày -->
+              <div class="flex flex-wrap items-center gap-1.5 mb-3">
+                <span class="text-[11px] font-bold text-slate-400 mr-0.5">Gợi ý nhanh:</span>
+                <button type="button" onclick="fillQuickExpenseTemplate('35k Ăn sáng #Ăn_uống')"
+                  class="px-2.5 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-[11px] font-bold border border-rose-200/70 dark:border-rose-800/70 transition">
+                  🍜 Ăn sáng
+                </button>
+                <button type="button" onclick="fillQuickExpenseTemplate('50k Ăn trưa văn phòng #Ăn_uống')"
+                  class="px-2.5 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-[11px] font-bold border border-rose-200/70 dark:border-rose-800/70 transition">
+                  🍱 Ăn trưa
+                </button>
+                <button type="button" onclick="fillQuickExpenseTemplate('45k Cafe & Trà sữa #Giải_trí')"
+                  class="px-2.5 py-1 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 hover:bg-cyan-100 text-cyan-700 dark:text-cyan-300 text-[11px] font-bold border border-cyan-200/70 dark:border-cyan-800/70 transition">
+                  ☕ Cafe
+                </button>
+                <button type="button" onclick="fillQuickExpenseTemplate('70k Đổ xăng xe máy #Di_chuyển')"
+                  class="px-2.5 py-1 rounded-xl bg-orange-50 dark:bg-orange-950/60 hover:bg-orange-100 text-orange-700 dark:text-orange-300 text-[11px] font-bold border border-orange-200/70 dark:border-orange-800/70 transition">
+                  ⛽ Đổ xăng
+                </button>
+                <button type="button" onclick="fillQuickExpenseTemplate('200k Đi siêu thị mua đồ #Mua_sắm')"
+                  class="px-2.5 py-1 rounded-xl bg-pink-50 dark:bg-pink-950/60 hover:bg-pink-100 text-pink-700 dark:text-pink-300 text-[11px] font-bold border border-pink-200/70 dark:border-pink-800/70 transition">
+                  🛒 Đi chợ / Siêu thị
+                </button>
+                <button type="button" onclick="fillQuickExpenseTemplate('300k Thanh toán hóa đơn điện nước #Hóa_đơn')"
+                  class="px-2.5 py-1 rounded-xl bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 text-violet-700 dark:text-violet-300 text-[11px] font-bold border border-violet-200/70 dark:border-violet-800/70 transition">
+                  🧾 Hóa đơn
+                </button>
+              </div>
+
+              <form id="quick-expense-form" class="space-y-3">
+                <div class="relative">
+                  <input type="text" id="quick-expense-input" autocomplete="off"
+                    placeholder="VD: 45k Ăn phở bò sáng #Ăn_uống"
+                    class="w-full pl-4 pr-24 py-3.5 rounded-2xl border-2 border-rose-200 dark:border-rose-900/80 bg-white dark:bg-slate-950 focus:outline-none focus:border-rose-500 font-mono-code text-sm shadow-inner" />
+                  <button type="submit"
+                    class="absolute right-2 top-2 bottom-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center gap-1">
+                    <span>Lưu Chi</span>
+                    <i data-lucide="corner-down-left" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+
+                <!-- Live Parser Preview Box cho Chi tiêu -->
+                <div id="quick-expense-parse-preview" class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/70 text-xs flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-slate-500 dark:text-slate-400">Gõ tự nhiên: <code class="font-mono-code text-rose-600 dark:text-rose-400">45k Ăn bún bò</code>, <code class="font-mono-code text-rose-600 dark:text-rose-400">150k Đổ xăng</code>, <code class="font-mono-code text-rose-600 dark:text-rose-400">2tr5 Tiền nhà</code> (tự nhận diện danh mục!)</span>
+                </div>
+              </form>
+            </div>
+
+            <!-- 2. FORM NHẬP CHI TIÊU CHI TIẾT -->
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200/90 dark:border-slate-800">
+              <div class="flex items-center gap-2 mb-4">
+                <span class="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+                  <i data-lucide="file-minus-2" class="w-4 h-4"></i>
+                </span>
+                <div>
+                  <h2 class="font-extrabold text-base">Nhập Nhật Ký Chi Tiêu Chi Tiết</h2>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">Chọn ngày bất kỳ để ghi lại khoản tiền đã chi tiêu</p>
+                </div>
+              </div>
+
+              <form id="detailed-expense-form" class="space-y-3.5">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Số tiền chi (VNĐ)</label>
+                    <input type="text" id="exp-detail-amount" required placeholder="VD: 50.000"
+                      oninput="formatCurrencyInput(this)"
+                      class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-extrabold text-rose-600 dark:text-rose-400 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Danh mục chi tiêu</label>
+                    <select id="exp-detail-category"
+                      class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500">
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Ngày chi tiêu (đồng bộ với lịch)</label>
+                  <input type="date" id="exp-detail-date" required onchange="onExpenseDetailDateChange(this.value)"
+                    class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500" />
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Nội dung khoản chi tiêu</label>
+                  <textarea id="exp-detail-note" rows="3" required placeholder="Nhập món ăn, hóa đơn, mua sắm hoặc lý do chi tiêu..."
+                    class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"></textarea>
+                </div>
+
+                <button type="submit"
+                  class="w-full py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md shadow-rose-500/20 transition flex items-center justify-center gap-2">
+                  <i data-lucide="minus-circle" class="w-4 h-4"></i>
+                  <span>Lưu Khoản Chi Tiêu</span>
                 </button>
               </form>
             </div>
@@ -1177,19 +1568,29 @@
         <!-- Render từ JS -->
       </div>
 
-      <!-- Thêm nhanh Note mới vào ngày đang mở -->
-      <div class="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-        <p class="text-xs font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-          + Thêm ghi chú thu nhập mới vào ngày <span id="day-modal-add-date-label"></span>:
+      <!-- Thêm nhanh Note Thu nhập hoặc Chi tiêu mới vào ngày đang mở -->
+      <div class="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+        <p class="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+          ⚡ Thêm nhanh vào ngày <span id="day-modal-add-date-label" class="text-indigo-600 dark:text-indigo-400"></span>:
         </p>
 
-        <!-- Gõ nhanh 1 dòng cho ngày này -->
+        <!-- Gõ nhanh 1 dòng Thu nhập cho ngày này -->
         <form id="day-modal-quick-form" class="flex gap-2">
-          <input type="text" id="day-modal-quick-input" placeholder="Gõ nhanh: 500k Làm web cho khách #Freelance"
-            class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono-code text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <input type="text" id="day-modal-quick-input" placeholder="💰 Thu nhập: 500k Làm web cho khách #Freelance"
+            class="flex-1 px-3.5 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-slate-800 font-mono-code text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
           <button type="submit"
-            class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shrink-0">
-            + Lưu nhanh
+            class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shrink-0">
+            + Lưu Thu
+          </button>
+        </form>
+
+        <!-- Gõ nhanh 1 dòng Chi tiêu cho ngày này -->
+        <form id="day-modal-quick-expense-form" class="flex gap-2">
+          <input type="text" id="day-modal-quick-expense-input" placeholder="💸 Chi tiêu: 45k Ăn phở bò sáng #Ăn_uống"
+            class="flex-1 px-3.5 py-2 rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50/40 dark:bg-slate-800 font-mono-code text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
+          <button type="submit"
+            class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0">
+            - Lưu Chi
           </button>
         </form>
       </div>
@@ -1233,6 +1634,48 @@
         <div class="flex items-center justify-end gap-2 pt-2">
           <button type="button" onclick="closeEditIncomeModal()" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold">Hủy (Esc)</button>
           <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold">Lưu cập nhật</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL SỬA GHI CHÚ CHI TIÊU ĐƠN LẺ -->
+  <div id="edit-expense-modal" onclick="if (event.target === this) closeEditExpenseModal()" class="fixed inset-0 z-[60] hidden bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="animate-modal-box bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-extrabold text-lg text-rose-600 dark:text-rose-400">Sửa Ghi Chú Chi Tiêu</h3>
+        <button onclick="closeEditExpenseModal()" title="Đóng (Phím tắt: Esc hoặc bấm ra khoảng trống)" class="px-2 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-white transition">
+          <span class="text-[10px] font-mono-code font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">Esc</span>
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <form id="edit-expense-form" class="space-y-3.5">
+        <input type="hidden" id="edit-expense-id" />
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">Số tiền chi (VNĐ)</label>
+          <input type="text" id="edit-expense-amount" required oninput="formatCurrencyInput(this)"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-extrabold text-rose-600 text-sm" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">Danh mục chi tiêu</label>
+            <select id="edit-expense-category"
+              class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">Ngày chi tiêu</label>
+            <input type="date" id="edit-expense-date" required
+              class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">Nội dung khoản chi tiêu</label>
+          <textarea id="edit-expense-note" rows="3" required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm"></textarea>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button type="button" onclick="closeEditExpenseModal()" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold">Hủy (Esc)</button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold">Lưu cập nhật</button>
         </div>
       </form>
     </div>
@@ -1382,6 +1825,6 @@
   </div>
 
   <!-- Application Script -->
-  <script src="/js/app.js?v=20261017_verified"></script>
+  <script src="/js/app.js?v=20261018_expenses"></script>
 </body>
 </html>

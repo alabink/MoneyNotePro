@@ -8,6 +8,7 @@ const { ensureSeedData } = require('./seed');
 
 const authRoutes = require('./routes/authRoutes');
 const incomeRoutes = require('./routes/incomeRoutes');
+const expenseRoutes = require('./routes/expenseRoutes');
 const goalRoutes = require('./routes/goalRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
@@ -46,6 +47,7 @@ app.get('/api/health', ensureDbReady, (req, res) => {
 
 app.use('/api/auth', ensureDbReady, authRoutes);
 app.use('/api/incomes', ensureDbReady, incomeRoutes);
+app.use('/api/expenses', ensureDbReady, expenseRoutes);
 app.use('/api/goals', ensureDbReady, goalRoutes);
 app.use('/api/admin', ensureDbReady, adminRoutes);
 

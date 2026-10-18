@@ -1,4 +1,5 @@
 const IncomeNote = require('../models/IncomeNote');
+const ExpenseNote = require('../models/ExpenseNote');
 const User = require('../models/User');
 
 /**
@@ -27,11 +28,18 @@ function parseLocalDateSafe(dateInput) {
 }
 
 /**
- * Tính toán lại chính xác chuỗi ngày nhập thu nhập liên tiếp (streakCount)
+ * Tính toán lại chính xác chuỗi ngày nhập thu nhập / chi tiêu liên tiếp (streakCount)
  * và ngày nhập gần nhất (lastEntryDate) của một User dựa trên dữ liệu thực tế.
  */
 async function recalculateUserStreak(userId) {
-  const notes = await IncomeNote.find({ userId }).select('date').sort({ date: -1 }).lean();
+  const [incomeNotes, expenseNotes] = await Promise.all([
+    IncomeNote.find({ userId }).select('date').sort({ date: -1 }).lean(),
+    ExpenseNote.find({ userId }).select('date').sort({ date: -1 }).lean(),
+  ]);
+
+  const notes = [...(incomeNotes || []), ...(expenseNotes || [])].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
 
   if (!notes || notes.length === 0) {
     await User.findByIdAndUpdate(userId, { streakCount: 0, lastEntryDate: null });

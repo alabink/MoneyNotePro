@@ -2,6 +2,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('./models/User');
 const IncomeNote = require('./models/IncomeNote');
+const ExpenseNote = require('./models/ExpenseNote');
 const Goal = require('./models/Goal');
 const SystemAnnouncement = require('./models/SystemAnnouncement');
 const { SystemSetting } = require('./models/SystemSetting');
@@ -19,6 +20,7 @@ async function ensureSeedData(cleanAllData = false) {
     if (cleanAllData) {
       await Promise.all([
         IncomeNote.deleteMany({}),
+        ExpenseNote.deleteMany({}),
         Goal.deleteMany({}),
         SystemAnnouncement.deleteMany({}),
         User.deleteMany({ email: { $ne: 'admin@moneynote.com' } }),
