@@ -1,5 +1,6 @@
 const Goal = require('../models/Goal');
 const IncomeNote = require('../models/IncomeNote');
+const ExpenseNote = require('../models/ExpenseNote');
 const { parseLocalDateSafe } = require('../utils/streakHelper');
 
 /**
@@ -32,7 +33,7 @@ function calculateDurationMonths(startDateInput, endDateInput) {
 }
 
 /**
- * Tính toán chi tiết tiến độ Mục tiêu + Tiền tiết kiệm & Lãi suất hàng tháng + Pace Calculator
+ * Tính toán chi tiết tiến độ Mục tiêu + Tiền tiết kiệm & Lãi suất hàng tháng + Trừ Chi tiêu + Pace Calculator
  */
 async function enrichGoalWithProgress(goalDoc) {
   const goal = goalDoc.toObject ? goalDoc.toObject() : { ...goalDoc };
@@ -43,25 +44,45 @@ async function enrichGoalWithProgress(goalDoc) {
   end.setHours(23, 59, 59, 999);
   const now = new Date();
 
-  // 1. Tổng tiền kiếm thêm từ Sổ tay Notepad (IncomeNote) trong khoảng startDate -> endDate
-  const agg = await IncomeNote.aggregate([
-    {
-      $match: {
-        userId: goal.userId,
-        date: { $gte: start, $lte: end },
+  // 1. Tổng tiền kiếm thêm từ Sổ tay Notepad (IncomeNote) và Chi tiêu (ExpenseNote) trong khoảng startDate -> endDate
+  const [agg, expAgg] = await Promise.all([
+    IncomeNote.aggregate([
+      {
+        $match: {
+          userId: goal.userId,
+          date: { $gte: start, $lte: end },
+        },
       },
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$amount' },
-        count: { $sum: 1 },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' },
+          count: { $sum: 1 },
+        },
       },
-    },
+    ]),
+    ExpenseNote.aggregate([
+      {
+        $match: {
+          userId: goal.userId,
+          date: { $gte: start, $lte: end },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
   ]);
 
   const notepadIncomeAmount = agg.length > 0 ? agg[0].total : 0;
   const entryCount = agg.length > 0 ? agg[0].count : 0;
+  const notepadExpenseAmount = expAgg.length > 0 ? expAgg[0].total : 0;
+  const expenseEntryCount = expAgg.length > 0 ? expAgg[0].count : 0;
+  const notepadNetAmount = notepadIncomeAmount - notepadExpenseAmount;
 
   // 2. Tính Tiền tiết kiệm gốc (tiền đã làm được) & Lãi suất hàng tháng
   // Ví dụ: Gửi 200.000.000 VNĐ, lãi 8% trong 6 tháng -> Mỗi tháng lãi 8% / 6 = 1.3333%/tháng = 2.666.667 VNĐ/tháng
@@ -112,6 +133,7 @@ async function enrichGoalWithProgress(goalDoc) {
 
       monthlySchedule.push({
         monthNumber: m,
+        label: `Tháng ${m}`,
         date: milestoneDate,
         ratePercent: Number((monthlyInterestRateRaw * factor).toFixed(4)),
         interestAmount: monthInterest,
@@ -121,9 +143,9 @@ async function enrichGoalWithProgress(goalDoc) {
     }
   }
 
-  // 3. Tổng số tiền đã đạt được của Mục tiêu = Tiền tiết kiệm gốc + Tiền lãi theo hạn + Thu nhập từ Sổ tay
+  // 3. Tổng số tiền đã đạt được của Mục tiêu = Tiền tiết kiệm gốc + Tiền lãi theo hạn + Thu nhập Sổ tay - Chi tiêu Sổ tay
   const savingsWithInterest = savingsPrincipal + totalProjectedInterest;
-  const currentAmount = savingsWithInterest + notepadIncomeAmount;
+  const currentAmount = Math.max(0, savingsWithInterest + notepadIncomeAmount - notepadExpenseAmount);
 
   const targetAmount = goal.targetAmount;
   const remainingAmount = Math.max(0, targetAmount - currentAmount);
@@ -168,7 +190,7 @@ async function enrichGoalWithProgress(goalDoc) {
     status = 'completed';
     paceStatus = 'completed';
     paceBadge = 'Đã đạt mục tiêu 🎉';
-    paceMessage = `Chúc mừng! Tổng tích lũy (Gốc + Lãi + Sổ tay) đã đạt ${overAchievedPercent}% mục tiêu (${currentAmount.toLocaleString(
+    paceMessage = `Chúc mừng! Tổng tích lũy thực tế (sau khi trừ chi tiêu) đã đạt ${overAchievedPercent}% mục tiêu (${currentAmount.toLocaleString(
       'vi-VN'
     )} ₫ / ${targetAmount.toLocaleString('vi-VN')} ₫).`;
   } else if (now > end) {
@@ -193,9 +215,11 @@ async function enrichGoalWithProgress(goalDoc) {
 
     paceMessage = `Sau khi cộng Tiền gốc (${savingsPrincipal.toLocaleString(
       'vi-VN'
-    )} ₫) & Lãi kỳ hạn (+${totalProjectedInterest.toLocaleString(
+    )} ₫), Lãi kỳ hạn (+${totalProjectedInterest.toLocaleString(
       'vi-VN'
-    )} ₫), cần kiếm thêm trung bình ${requiredDailyPace.toLocaleString(
+    )} ₫) và trừ Chi tiêu (-${notepadExpenseAmount.toLocaleString(
+      'vi-VN'
+    )} ₫), cần tích lũy thêm trung bình ${requiredDailyPace.toLocaleString(
       'vi-VN'
     )} VNĐ/ngày trong ${remainingDays} ngày còn lại.`;
   }
@@ -215,6 +239,9 @@ async function enrichGoalWithProgress(goalDoc) {
       targetAmount,
       remainingAmount,
       notepadIncomeAmount,
+      notepadExpenseAmount,
+      notepadNetAmount,
+      expenseEntryCount,
       savingsPrincipal,
       interestRate,
       interestTermMonths,

@@ -454,15 +454,19 @@ async function bootstrapAuthenticatedApp() {
   }
   if (state.incomes && state.incomes.length > 0) {
     const totalCached = state.incomes.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const totalExpCached = (state.expenses || []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
     document.getElementById('notes-count-badge').textContent = state.incomes.length;
-    document.getElementById('notes-total-badge').textContent = formatVND(totalCached);
+    updateIncomeListTotalBadge(totalCached, totalExpCached);
     renderIncomeNotesList();
+  }
+  if (state.expenseCalendarData) {
+    renderExpenseSummaryAndCalendarUI();
   }
   if (state.expenses && state.expenses.length > 0) {
     const totalExpCached = state.expenses.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     if (document.getElementById('exp-notes-count-badge')) {
       document.getElementById('exp-notes-count-badge').textContent = state.expenses.length;
-      document.getElementById('exp-notes-total-badge').textContent = formatVND(totalExpCached);
+      document.getElementById('exp-notes-total-badge').textContent = `-${formatVND(totalExpCached)}`;
       renderExpenseNotesList();
     }
   }
@@ -628,9 +632,9 @@ function populateCategorySelects() {
 }
 
 function populateExpenseCategorySelects() {
-  const detailSelect = document.getElementById('expense-detail-category');
+  const detailSelect = document.getElementById('exp-detail-category');
   const editSelect = document.getElementById('edit-expense-category');
-  const filterSelect = document.getElementById('filter-expense-category');
+  const filterSelect = document.getElementById('exp-filter-category');
 
   const optionsHtml = (state.expenseCategories || DEFAULT_EXPENSE_CATEGORIES_FALLBACK)
     .map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`)
@@ -683,25 +687,25 @@ function updateSelectedDateUI() {
   }
 
   // Đồng bộ UI ngày đang chọn cho Tab Chi Tiêu Hằng Ngày
-  const expDisplayEl = document.getElementById('active-expense-selected-date-display');
+  const expDisplayEl = document.getElementById('exp-selected-date-display');
   if (expDisplayEl) {
     expDisplayEl.textContent = isToday ? `Hôm nay (${formatted})` : `Ngày ${formatted}`;
   }
 
-  const expQuickLabel = document.getElementById('quick-expense-target-date-label');
+  const expQuickLabel = document.getElementById('exp-quick-target-date-label');
   if (expQuickLabel) {
     expQuickLabel.textContent = isToday ? `hôm nay (${formatted})` : formatted;
   }
 
-  const expDetailDateInput = document.getElementById('expense-detail-date');
+  const expDetailDateInput = document.getElementById('exp-detail-date');
   if (expDetailDateInput) {
     expDetailDateInput.value = state.selectedDate;
   }
 
-  const expFilterPill = document.getElementById('active-expense-date-filter-pill');
-  const expFilterText = document.getElementById('active-expense-date-filter-text');
-  const expBtnShowAll = document.getElementById('btn-show-all-expense-dates');
-  const expExactDateInput = document.getElementById('filter-expense-exact-date');
+  const expFilterPill = document.getElementById('exp-active-date-filter-pill');
+  const expFilterText = document.getElementById('exp-active-date-filter-text');
+  const expBtnShowAll = document.getElementById('btn-exp-show-all-dates');
+  const expExactDateInput = document.getElementById('exp-filter-exact-date');
 
   if (state.filterExpensesBySelectedDate) {
     if (expFilterPill) expFilterPill.classList.remove('hidden');
@@ -1272,8 +1276,8 @@ function selectTodayOnExpenseCalendar() {
   const now = new Date();
   state.selectedDate = toInputDateValue(now);
   state.filterExpensesBySelectedDate = false;
-  const mEl = document.getElementById('expense-cal-month');
-  const yEl = document.getElementById('expense-cal-year');
+  const mEl = document.getElementById('exp-cal-month');
+  const yEl = document.getElementById('exp-cal-year');
   if (mEl) mEl.value = String(now.getMonth() + 1);
   if (yEl) yEl.value = String(now.getFullYear());
   updateSelectedDateUI();
@@ -1282,8 +1286,8 @@ function selectTodayOnExpenseCalendar() {
 }
 
 function changeExpenseCalendarMonth(delta) {
-  const monthEl = document.getElementById('expense-cal-month');
-  const yearEl = document.getElementById('expense-cal-year');
+  const monthEl = document.getElementById('exp-cal-month');
+  const yearEl = document.getElementById('exp-cal-year');
   if (!monthEl || !yearEl) return;
 
   let m = parseInt(monthEl.value, 10) + delta;
@@ -1302,10 +1306,91 @@ function changeExpenseCalendarMonth(delta) {
   loadExpenseCalendar();
 }
 
+function renderExpenseSummaryAndCalendarUI() {
+  if (!state.expenseCalendarData) return;
+  const { summary, period, dailySeries, categorySeries } = state.expenseCalendarData;
+  if (!summary || !period) return;
+
+  const todayTotal = summary.todayTotal ?? summary.todayExpenseTotal ?? 0;
+  const todayCount = summary.todayCount ?? summary.todayExpenseCount ?? 0;
+  const totalMonth = summary.totalMonth ?? summary.totalExpenseMonth ?? 0;
+  const dailyAvg = summary.dailyAverage ?? 0;
+  const highestDay = summary.highestDay || summary.highestExpenseDay || null;
+  const totalIncomeMonth = summary.totalIncomeMonth ?? 0;
+  const netBalance =
+    summary.netBalanceMonth !== undefined
+      ? summary.netBalanceMonth
+      : summary.netBalance !== undefined
+      ? summary.netBalance
+      : totalIncomeMonth - totalMonth;
+  const ratio =
+    summary.expenseToIncomeRatio !== undefined
+      ? summary.expenseToIncomeRatio
+      : totalIncomeMonth > 0
+      ? Number(((totalMonth / totalIncomeMonth) * 100).toFixed(1))
+      : 0;
+
+  // 1. Box 1: CHI TIÊU HÔM NAY
+  const todayTotalEl = document.getElementById('exp-stat-today');
+  const todayCountEl = document.getElementById('exp-stat-today-sub');
+  if (todayTotalEl) todayTotalEl.textContent = todayTotal > 0 ? `-${formatVND(todayTotal)}` : '0 ₫';
+  if (todayCountEl) todayCountEl.textContent = `${todayCount} khoản chi hôm nay`;
+
+  // 2. Box 2: TỔNG CHI TIÊU THÁNG
+  const monthTotalEl = document.getElementById('exp-stat-month');
+  const monthCountEl = document.getElementById('exp-stat-month-sub');
+  if (monthTotalEl) monthTotalEl.textContent = totalMonth > 0 ? `-${formatVND(totalMonth)}` : '0 ₫';
+  if (monthCountEl) {
+    monthCountEl.textContent = `${summary.totalEntries || 0} khoản chi (${summary.activeDaysCount || 0} ngày có chi)`;
+  }
+
+  // 3. Box 3: TRUNG BÌNH CHI MỖI NGÀY
+  const dailyAvgEl = document.getElementById('exp-stat-daily-avg');
+  const maxDayEl = document.getElementById('exp-stat-highest-day');
+  if (dailyAvgEl) dailyAvgEl.textContent = dailyAvg > 0 ? `-${formatVND(dailyAvg)}` : '0 ₫';
+  if (maxDayEl) {
+    if (highestDay && highestDay.total > 0) {
+      maxDayEl.textContent = `Ngày chi cao nhất: ${highestDay.day}/${period.month} (-${formatVND(highestDay.total)})`;
+    } else {
+      maxDayEl.textContent = 'Chưa phát sinh chi tiêu trong tháng';
+    }
+  }
+
+  // 4. Box 4: SỐ DƯ RÒNG (THU - CHI)
+  const netBalEl = document.getElementById('exp-stat-net-balance');
+  const ratioEl = document.getElementById('exp-stat-net-sub');
+  if (netBalEl) {
+    netBalEl.textContent = `${netBalance > 0 ? '+' : ''}${formatVND(netBalance)}`;
+    netBalEl.className =
+      netBalance >= 0
+        ? 'text-2xl font-extrabold text-emerald-600 dark:text-emerald-400'
+        : 'text-2xl font-extrabold text-rose-600 dark:text-rose-400';
+  }
+  if (ratioEl) {
+    ratioEl.textContent =
+      totalIncomeMonth > 0
+        ? `Tổng thu: ${formatVND(totalIncomeMonth)} • Đã chi ${ratio}%`
+        : `Tổng thu: 0 ₫ • Đã trừ chi: -${formatVND(totalMonth)}`;
+  }
+
+  // Thanh tóm tắt Lịch Chi Tiêu
+  const calMonthTotalEl = document.getElementById('exp-cal-month-total');
+  const calActiveDaysEl = document.getElementById('exp-cal-active-days');
+  if (calMonthTotalEl) calMonthTotalEl.textContent = totalMonth > 0 ? `-${formatVND(totalMonth)}` : '0 ₫';
+  if (calActiveDaysEl) {
+    calActiveDaysEl.textContent = `${summary.activeDaysCount || 0}/${period.daysInMonth} ngày có chi tiêu (${
+      summary.totalEntries || 0
+    } khoản chi)`;
+  }
+
+  renderExpenseCalendarGrid();
+  renderExpenseCharts(dailySeries, categorySeries);
+}
+
 async function loadExpenseCalendar() {
   try {
-    const monthEl = document.getElementById('expense-cal-month');
-    const yearEl = document.getElementById('expense-cal-year');
+    const monthEl = document.getElementById('exp-cal-month');
+    const yearEl = document.getElementById('exp-cal-year');
     if (!monthEl || !yearEl) return;
 
     const month = monthEl.value;
@@ -1325,74 +1410,7 @@ async function loadExpenseCalendar() {
     state.expenseCalendarData = data;
     saveLocalDataCache();
 
-    const { summary, period, dailySeries, categorySeries } = data;
-
-    // 4 KPI Cards trên đầu Tab Chi Tiêu Hằng Ngày
-    const todayTotalEl = document.getElementById('exp-kpi-today-total');
-    const todayCountEl = document.getElementById('exp-kpi-today-count');
-    if (todayTotalEl) todayTotalEl.textContent = formatVND(summary.todayExpenseTotal || 0);
-    if (todayCountEl) todayCountEl.textContent = `${summary.todayExpenseCount || 0} khoản chi hôm nay`;
-
-    const monthTotalEl = document.getElementById('exp-kpi-month-total');
-    const monthCountEl = document.getElementById('exp-kpi-month-count');
-    if (monthTotalEl) monthTotalEl.textContent = formatVND(summary.totalExpenseMonth || 0);
-    if (monthCountEl) {
-      monthCountEl.textContent = `${summary.totalEntries || 0} khoản chi (${summary.activeDaysCount || 0} ngày có chi)`;
-    }
-
-    const dailyAvgEl = document.getElementById('exp-kpi-daily-avg');
-    const maxDayEl = document.getElementById('exp-kpi-max-day');
-    if (dailyAvgEl) dailyAvgEl.textContent = formatVND(summary.dailyAverage || 0);
-    if (maxDayEl) {
-      if (summary.highestExpenseDay && summary.highestExpenseDay.total > 0) {
-        maxDayEl.textContent = `Ngày chi cao nhất: ${summary.highestExpenseDay.day}/${period.month} (${formatVND(
-          summary.highestExpenseDay.total
-        )})`;
-      } else {
-        maxDayEl.textContent = 'Chưa phát sinh chi tiêu trong tháng';
-      }
-    }
-
-    const netBalEl = document.getElementById('exp-kpi-net-balance');
-    const ratioEl = document.getElementById('exp-kpi-income-ratio');
-    if (netBalEl) {
-      const net = summary.netBalance || 0;
-      netBalEl.textContent = `${net >= 0 ? '+' : ''}${formatVND(net)}`;
-      netBalEl.className =
-        net >= 0
-          ? 'text-2xl font-extrabold text-emerald-600 dark:text-emerald-400'
-          : 'text-2xl font-extrabold text-rose-600 dark:text-rose-400';
-    }
-    if (ratioEl) {
-      ratioEl.textContent =
-        summary.totalIncomeMonth > 0
-          ? `Đã chi ${summary.expenseToIncomeRatio}% tổng thu nhập tháng (${formatVND(summary.totalIncomeMonth)})`
-          : `Thu nhập tháng này: ${formatVND(summary.totalIncomeMonth || 0)}`;
-    }
-
-    // Thanh tóm tắt Lịch Chi Tiêu
-    const calMonthTotalEl = document.getElementById('expense-cal-month-total');
-    const calActiveDaysEl = document.getElementById('expense-cal-active-days');
-    const calNetEl = document.getElementById('expense-cal-net-balance');
-
-    if (calMonthTotalEl) calMonthTotalEl.textContent = `-${formatVND(summary.totalExpenseMonth || 0)}`;
-    if (calActiveDaysEl) {
-      calActiveDaysEl.textContent = `${summary.activeDaysCount || 0}/${period.daysInMonth} ngày (${summary.totalEntries || 0} khoản chi)`;
-    }
-    if (calNetEl) {
-      const net = summary.netBalance || 0;
-      calNetEl.textContent = `${net >= 0 ? '+' : ''}${formatVND(net)}`;
-      calNetEl.className =
-        net >= 0
-          ? 'font-extrabold text-emerald-600 dark:text-emerald-400 text-base'
-          : 'font-extrabold text-rose-600 dark:text-rose-400 text-base';
-    }
-
-    const chartSubEl = document.getElementById('expense-daily-chart-subtitle');
-    if (chartSubEl) chartSubEl.textContent = `Tháng ${period.month}/${period.year}`;
-
-    renderExpenseCalendarGrid();
-    renderExpenseCharts(dailySeries, categorySeries);
+    renderExpenseSummaryAndCalendarUI();
   } catch (error) {
     console.error('Load expense calendar error:', error);
   }
@@ -1403,7 +1421,8 @@ function renderExpenseCalendarGrid() {
   if (!grid || !state.expenseCalendarData) return;
 
   const { period, dailySeries, summary } = state.expenseCalendarData;
-  const maxDayExpense = summary.highestExpenseDay?.total || 0;
+  const highestDay = summary.highestDay || summary.highestExpenseDay || null;
+  const maxDayExpense = highestDay?.total || 0;
   const todayStr = toInputDateValue(new Date());
 
   const cells = [];
@@ -1552,6 +1571,29 @@ function renderExpenseCharts(dailySeries, categorySeries) {
       },
     },
   });
+
+  const breakdownListEl = document.getElementById('expense-category-breakdown-list');
+  if (breakdownListEl) {
+    if (!categorySeries || categorySeries.length === 0) {
+      breakdownListEl.innerHTML = `<p class="text-xs text-slate-400 text-center">Chưa phát sinh chi tiêu trong tháng</p>`;
+    } else {
+      breakdownListEl.innerHTML = categorySeries
+        .map((c) => {
+          const color = getExpenseCategoryColor(c.category);
+          return `
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${color}"></span>
+                <span class="font-semibold">${escapeHtml(c.category)}</span>
+                <span class="text-slate-400">(${c.percentage}%)</span>
+              </div>
+              <span class="font-bold text-rose-600 dark:text-rose-400">-${formatVND(c.total)}</span>
+            </div>
+          `;
+        })
+        .join('');
+    }
+  }
 }
 
 function fillQuickExpenseTemplate(templateText) {
@@ -1643,8 +1685,8 @@ function debounceLoadExpenses() {
 }
 
 function resetExpenseFilters() {
-  const searchEl = document.getElementById('filter-expense-search');
-  const catEl = document.getElementById('filter-expense-category');
+  const searchEl = document.getElementById('exp-filter-search');
+  const catEl = document.getElementById('exp-filter-category');
   if (searchEl) searchEl.value = '';
   if (catEl) catEl.value = 'all';
   state.filterExpensesBySelectedDate = false;
@@ -1654,8 +1696,8 @@ function resetExpenseFilters() {
 
 async function loadExpenses() {
   try {
-    const search = document.getElementById('filter-expense-search')?.value || '';
-    const category = document.getElementById('filter-expense-category')?.value || 'all';
+    const search = document.getElementById('exp-filter-search')?.value || '';
+    const category = document.getElementById('exp-filter-category')?.value || 'all';
     const listEl = document.getElementById('expense-notes-list');
 
     if (listEl && (!state.expenses || state.expenses.length === 0)) {
@@ -1673,8 +1715,8 @@ async function loadExpenses() {
     state.expenses = data.expenses || [];
     saveLocalDataCache();
 
-    const countBadge = document.getElementById('expense-notes-count-badge');
-    const totalBadge = document.getElementById('expense-notes-total-badge');
+    const countBadge = document.getElementById('exp-notes-count-badge');
+    const totalBadge = document.getElementById('exp-notes-total-badge');
     if (countBadge) countBadge.textContent = data.count || 0;
     if (totalBadge) totalBadge.textContent = `-${formatVND(data.totalAmount || 0)}`;
 
@@ -1685,28 +1727,136 @@ async function loadExpenses() {
 }
 
 /**
- * Cập nhật giao diện tức thì (Optimistic UI Update 0ms) khi thêm/sửa/xóa khoản chi tiêu
+ * Cập nhật giao diện tức thì (Optimistic UI Update 0ms) khi thêm/sửa/xóa khoản chi tiêu:
+ * - Cập nhật ngay danh sách Chi tiêu, 4 thẻ KPI Chi tiêu, Lịch Chi Tiêu
+ * - Trừ ngay lập tức vào Tổng thu nhập / Mục tiêu tài chính đang ghim và Lịch Trang Chủ
  */
 function applyOptimisticExpenseChange(action, expenseObj, deletedId = null) {
+  let prevItem = null;
   if (action === 'add' && expenseObj) {
     state.expenses = [expenseObj, ...(state.expenses || []).filter((e) => e._id !== expenseObj._id)];
   } else if (action === 'update' && expenseObj) {
+    prevItem = (state.expenses || []).find((e) => e._id === expenseObj._id) || null;
     state.expenses = (state.expenses || []).map((e) => (e._id === expenseObj._id ? expenseObj : e));
   } else if (action === 'delete' && deletedId) {
+    prevItem = (state.expenses || []).find((e) => e._id === deletedId) || null;
     state.expenses = (state.expenses || []).filter((e) => e._id !== deletedId);
   }
 
   const totalAmount = (state.expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const countBadge = document.getElementById('expense-notes-count-badge');
-  const totalBadge = document.getElementById('expense-notes-total-badge');
+  const countBadge = document.getElementById('exp-notes-count-badge');
+  const totalBadge = document.getElementById('exp-notes-total-badge');
   if (countBadge) countBadge.textContent = (state.expenses || []).length;
   if (totalBadge) totalBadge.textContent = `-${formatVND(totalAmount)}`;
 
   renderExpenseNotesList();
+
+  // Cập nhật tức thì (0ms) trên 4 KPI Cards & Lịch Chi Tiêu
+  if (state.expenseCalendarData && Array.isArray(state.expenseCalendarData.dailySeries)) {
+    const series = state.expenseCalendarData.dailySeries;
+    const summary = state.expenseCalendarData.summary || {};
+    const period = state.expenseCalendarData.period || {};
+    const todayStr = toInputDateValue(new Date());
+
+    if (action === 'add' && expenseObj) {
+      const dStr = toInputDateValue(expenseObj.date);
+      const cell = series.find((d) => d.dateStr === dStr);
+      if (cell) {
+        cell.total += Number(expenseObj.amount) || 0;
+        cell.count += 1;
+      }
+      if (dStr === todayStr) {
+        summary.todayTotal = (summary.todayTotal || 0) + (Number(expenseObj.amount) || 0);
+        summary.todayCount = (summary.todayCount || 0) + 1;
+      }
+    } else if (action === 'delete' && prevItem) {
+      const dStr = toInputDateValue(prevItem.date);
+      const cell = series.find((d) => d.dateStr === dStr);
+      if (cell) {
+        cell.total = Math.max(0, cell.total - (Number(prevItem.amount) || 0));
+        cell.count = Math.max(0, cell.count - 1);
+      }
+      if (dStr === todayStr) {
+        summary.todayTotal = Math.max(0, (summary.todayTotal || 0) - (Number(prevItem.amount) || 0));
+        summary.todayCount = Math.max(0, (summary.todayCount || 0) - 1);
+      }
+    } else if (action === 'update' && expenseObj) {
+      if (prevItem) {
+        const oldDStr = toInputDateValue(prevItem.date);
+        const oldCell = series.find((d) => d.dateStr === oldDStr);
+        if (oldCell) {
+          oldCell.total = Math.max(0, oldCell.total - (Number(prevItem.amount) || 0));
+          oldCell.count = Math.max(0, oldCell.count - 1);
+        }
+        if (oldDStr === todayStr) {
+          summary.todayTotal = Math.max(0, (summary.todayTotal || 0) - (Number(prevItem.amount) || 0));
+        }
+      }
+      const newDStr = toInputDateValue(expenseObj.date);
+      const newCell = series.find((d) => d.dateStr === newDStr);
+      if (newCell) {
+        newCell.total += Number(expenseObj.amount) || 0;
+        newCell.count += 1;
+      }
+      if (newDStr === todayStr) {
+        summary.todayTotal = (summary.todayTotal || 0) + (Number(expenseObj.amount) || 0);
+      }
+    }
+
+    const totalExpMonth = series.reduce((s, d) => s + d.total, 0);
+    const totalEntries = series.reduce((s, d) => s + d.count, 0);
+    const activeDaysCount = series.filter((d) => d.total > 0).length;
+    const elapsedDays = Math.max(1, period.elapsedDays || 1);
+
+    let highestDay = { day: null, dateStr: null, total: 0, count: 0 };
+    for (const d of series) {
+      if (d.total > highestDay.total) {
+        highestDay = { day: d.day, dateStr: d.dateStr, total: d.total, count: d.count };
+      }
+    }
+
+    summary.totalMonth = totalExpMonth;
+    summary.totalExpenseMonth = totalExpMonth;
+    summary.totalEntries = totalEntries;
+    summary.activeDaysCount = activeDaysCount;
+    summary.dailyAverage = Math.round(totalExpMonth / elapsedDays);
+    summary.highestDay = highestDay;
+    summary.highestExpenseDay = highestDay;
+    summary.netBalanceMonth = (summary.totalIncomeMonth || 0) - totalExpMonth;
+    summary.netBalance = summary.netBalanceMonth;
+    summary.expenseToIncomeRatio =
+      summary.totalIncomeMonth > 0 ? Number(((totalExpMonth / summary.totalIncomeMonth) * 100).toFixed(1)) : 0;
+
+    renderExpenseSummaryAndCalendarUI();
+  }
+
+  // Trừ tức thì vào Tổng thu nhập & Mục tiêu tài chính đang ghim (0ms)
+  let deltaExpense = 0;
+  if (action === 'add' && expenseObj) {
+    deltaExpense = Number(expenseObj.amount) || 0;
+  } else if (action === 'delete' && prevItem) {
+    deltaExpense = -(Number(prevItem.amount) || 0);
+  } else if (action === 'update' && expenseObj) {
+    deltaExpense = (Number(expenseObj.amount) || 0) - (Number(prevItem?.amount) || 0);
+  }
+
+  if (deltaExpense !== 0 && state.pinnedGoal && state.pinnedGoal.metrics) {
+    const m = state.pinnedGoal.metrics;
+    m.notepadExpenseAmount = Math.max(0, (m.notepadExpenseAmount || 0) + deltaExpense);
+    m.notepadNetAmount = (m.notepadIncomeAmount || 0) - m.notepadExpenseAmount;
+    m.currentAmount = Math.max(0, (m.savingsWithInterest || 0) + m.notepadNetAmount);
+    m.remainingAmount = Math.max(0, (m.targetAmount || 0) - m.currentAmount);
+    const rawPct = m.targetAmount > 0 ? (m.currentAmount / m.targetAmount) * 100 : 0;
+    m.progressPercent = Number(Math.min(100, rawPct).toFixed(1));
+    m.overAchievedPercent = Number(rawPct.toFixed(1));
+    renderHeroGoalBanner();
+    renderGoalsGrid();
+  }
+
   saveLocalDataCache();
 
-  // Đồng bộ nền Lịch Chi Tiêu và Lịch Trang Chủ
-  Promise.all([loadExpenseCalendar(), loadExpenses(), loadHomeCalendar()]).catch(() => {});
+  // Đồng bộ nền toàn bộ Lịch Chi Tiêu, Lịch Trang Chủ, Tổng Thu Nhập và Mục Tiêu Tài Chính
+  Promise.all([loadExpenseCalendar(), loadExpenses(), loadHomeCalendar(), loadIncomes(), loadGoals()]).catch(() => {});
 }
 
 function renderExpenseNotesList() {
@@ -1807,8 +1957,8 @@ async function deleteExpenseNote(id) {
 function exportExpenseData(format = 'csv', onlySelectedMonth = false) {
   let url = `/api/expenses/export?format=${format}`;
   if (onlySelectedMonth) {
-    const month = document.getElementById('expense-cal-month')?.value;
-    const year = document.getElementById('expense-cal-year')?.value;
+    const month = document.getElementById('exp-cal-month')?.value;
+    const year = document.getElementById('exp-cal-year')?.value;
     if (month && year) url += `&month=${month}&year=${year}`;
   }
   window.open(url, '_blank');
@@ -1942,7 +2092,7 @@ function renderHeroGoalBanner() {
         <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
           <div>
             <p class="text-xs uppercase tracking-wider text-indigo-200 font-semibold">
-              Tổng tài sản đã đạt (Tiền đã làm được + Lãi tiết kiệm + Thu nhập sổ tay)
+              Tổng tài sản thực tế (Tiền gốc + Lãi tiết kiệm + Thu nhập sổ tay − Chi tiêu)
             </p>
             <div class="flex items-baseline gap-2 mt-0.5">
               <span class="text-2xl sm:text-3xl font-extrabold text-emerald-400">${formatVND(m.currentAmount)}</span>
@@ -1993,11 +2143,23 @@ function renderHeroGoalBanner() {
 
           <div class="p-3.5 rounded-xl bg-indigo-500/15 border border-indigo-400/30">
             <div class="flex items-center justify-between">
-              <p class="text-[11px] text-indigo-200 font-bold uppercase">📝 Thu nhập Sổ tay trong kỳ</p>
-              <span class="text-[11px] text-indigo-200 font-semibold">${m.entryCount} bản ghi</span>
+              <p class="text-[11px] text-indigo-200 font-bold uppercase">📝 Sổ tay Thu − Chi trong kỳ</p>
+              <span class="text-[11px] text-indigo-200 font-semibold">${m.entryCount || 0} thu • ${
+                m.expenseEntryCount || 0
+              } chi</span>
             </div>
-            <p class="text-lg font-extrabold text-indigo-300 mt-1">+${formatVND(m.notepadIncomeAmount || 0)}</p>
-            <p class="text-[11px] text-indigo-200/90 mt-0.5">Tự động cộng từ các ghi chú thu nhập hàng ngày</p>
+            <p class="text-lg font-extrabold ${
+              (m.notepadIncomeAmount || 0) - (m.notepadExpenseAmount || 0) >= 0 ? 'text-indigo-300' : 'text-rose-300'
+            } mt-1">
+              ${(m.notepadIncomeAmount || 0) - (m.notepadExpenseAmount || 0) >= 0 ? '+' : ''}${formatVND(
+                (m.notepadIncomeAmount || 0) - (m.notepadExpenseAmount || 0)
+              )}
+            </p>
+            <p class="text-[11px] text-indigo-200/90 mt-0.5">
+              Thu: <b class="text-emerald-300">+${formatVND(m.notepadIncomeAmount || 0)}</b> • Chi: <b class="text-rose-300">-${formatVND(
+                m.notepadExpenseAmount || 0
+              )}</b>
+            </p>
           </div>
         </div>
 
@@ -2150,6 +2312,10 @@ function renderGoalsGrid() {
               <span class="text-slate-500">📝 Thu nhập Sổ tay cộng thêm:</span>
               <b class="text-indigo-600 dark:text-indigo-400">+${formatVND(m.notepadIncomeAmount || 0)}</b>
             </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">💸 Chi tiêu Sổ tay đã trừ:</span>
+              <b class="text-rose-600 dark:text-rose-400">-${formatVND(m.notepadExpenseAmount || 0)}</b>
+            </div>
             <div class="border-t border-slate-200 dark:border-slate-700 pt-1.5 flex justify-between">
               <span class="text-slate-500">Còn thiếu để đạt mục tiêu:</span>
               <b class="text-rose-600 dark:text-rose-400">${formatVND(m.remainingAmount)}</b>
@@ -2250,6 +2416,22 @@ function resetIncomeFilters() {
   loadIncomes();
 }
 
+function updateIncomeListTotalBadge(grossAmount, expenseAmount) {
+  const badgeEl = document.getElementById('notes-total-badge');
+  if (!badgeEl) return;
+  const gross = Number(grossAmount) || 0;
+  const exp = Number(expenseAmount) || 0;
+  const net = gross - exp;
+
+  if (exp > 0) {
+    badgeEl.innerHTML = `${formatVND(net)} <span class="text-slate-400 font-normal">(Thu: +${formatVND(
+      gross
+    )} • Đã trừ chi: <span class="text-rose-500 font-bold">-${formatVND(exp)}</span>)</span>`;
+  } else {
+    badgeEl.textContent = formatVND(gross);
+  }
+}
+
 async function loadIncomes() {
   try {
     const search = document.getElementById('filter-search')?.value || '';
@@ -2272,7 +2454,11 @@ async function loadIncomes() {
     saveLocalDataCache();
 
     document.getElementById('notes-count-badge').textContent = data.count || 0;
-    document.getElementById('notes-total-badge').textContent = formatVND(data.totalAmount || 0);
+    const totalExp =
+      data.totalExpenseAmount !== undefined
+        ? data.totalExpenseAmount
+        : (state.expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    updateIncomeListTotalBadge(data.totalAmount || 0, totalExp);
 
     renderIncomeNotesList();
   } catch (error) {
@@ -2296,8 +2482,9 @@ function applyOptimisticIncomeChange(action, incomeObj, deletedId = null) {
   }
 
   const totalAmount = state.incomes.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const totalExp = (state.expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   document.getElementById('notes-count-badge').textContent = state.incomes.length;
-  document.getElementById('notes-total-badge').textContent = formatVND(totalAmount);
+  updateIncomeListTotalBadge(totalAmount, totalExp);
   renderIncomeNotesList();
 
   // Cập nhật tức thì ô Lịch Tháng (Home Calendar) trong bộ nhớ
@@ -2341,18 +2528,24 @@ function applyOptimisticIncomeChange(action, incomeObj, deletedId = null) {
     const totalMonth = series.reduce((s, d) => s + d.total, 0);
     const totalEntries = series.reduce((s, d) => s + d.count, 0);
     const activeDaysCount = series.filter((d) => d.total > 0).length;
+    const totalExpMonth = state.homeCalendarData.summary?.totalExpenseMonth || 0;
+    const netBal = totalMonth - totalExpMonth;
     state.homeCalendarData.summary.totalMonth = totalMonth;
+    state.homeCalendarData.summary.netBalanceMonth = netBal;
     state.homeCalendarData.summary.totalEntries = totalEntries;
     state.homeCalendarData.summary.activeDaysCount = activeDaysCount;
     document.getElementById('home-cal-month-total').textContent = formatVND(totalMonth);
-    document.getElementById('home-cal-active-days').textContent = `${activeDaysCount}/${state.homeCalendarData.period.daysInMonth} ngày có thu nhập (${totalEntries} note)`;
+    if (document.getElementById('home-cal-month-net')) {
+      document.getElementById('home-cal-month-net').textContent = `${netBal >= 0 ? '+' : ''}${formatVND(netBal)}`;
+    }
+    document.getElementById('home-cal-active-days').textContent = `${activeDaysCount}/${state.homeCalendarData.period.daysInMonth} ngày có thu (${totalEntries} note)`;
     renderHomeCalendarGrid();
   }
 
   saveLocalDataCache();
 
   // Đồng bộ nền không chặn thao tác của người dùng
-  Promise.all([loadHomeCalendar(), loadIncomes(), loadGoals()]).catch(() => {});
+  Promise.all([loadHomeCalendar(), loadIncomes(), loadExpenseCalendar(), loadGoals()]).catch(() => {});
 }
 
 function renderIncomeNotesList() {
@@ -2475,8 +2668,15 @@ async function loadMonthlyAnalytics() {
       renderUserHeaderAndProfile();
     }
 
-    document.getElementById('stat-total-month').textContent = formatVND(summary.totalMonth);
-    document.getElementById('stat-total-entries').textContent = `${summary.totalEntries} khoản thu nhập (${summary.activeDaysCount} ngày có thu nhập)`;
+    const totalExpMonth = summary.totalExpenseMonth || 0;
+    const netIncomeMonth =
+      summary.netBalanceMonth !== undefined ? summary.netBalanceMonth : summary.totalMonth - totalExpMonth;
+
+    document.getElementById('stat-total-month').textContent = formatVND(netIncomeMonth);
+    document.getElementById('stat-total-entries').textContent =
+      totalExpMonth > 0
+        ? `Tổng thu: +${formatVND(summary.totalMonth)} • Đã trừ chi: -${formatVND(totalExpMonth)}`
+        : `${summary.totalEntries} khoản thu nhập (${summary.activeDaysCount} ngày có thu nhập)`;
 
     document.getElementById('stat-daily-avg').textContent = formatVND(summary.dailyAverage);
     document.getElementById('stat-active-days').textContent = `Trung bình trên ${period.elapsedDays} ngày trong tháng ${period.month}/${period.year}`;
@@ -3504,14 +3704,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (detailedExpenseForm) {
     detailedExpenseForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const amount = document.getElementById('expense-detail-amount').value;
-      const category = document.getElementById('expense-detail-category').value;
-      const date = document.getElementById('expense-detail-date').value;
-      const note = document.getElementById('expense-detail-note').value;
+      const amount = document.getElementById('exp-detail-amount').value;
+      const category = document.getElementById('exp-detail-category').value;
+      const date = document.getElementById('exp-detail-date').value;
+      const note = document.getElementById('exp-detail-note').value;
 
       try {
-        document.getElementById('expense-detail-amount').value = '';
-        document.getElementById('expense-detail-note').value = '';
+        document.getElementById('exp-detail-amount').value = '';
+        document.getElementById('exp-detail-note').value = '';
 
         const res = await apiRequest('/api/expenses', {
           method: 'POST',
@@ -3529,8 +3729,8 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(res.message, 'success');
         applyOptimisticExpenseChange('add', res.expense);
       } catch (error) {
-        document.getElementById('expense-detail-amount').value = amount;
-        document.getElementById('expense-detail-note').value = note;
+        document.getElementById('exp-detail-amount').value = amount;
+        document.getElementById('exp-detail-note').value = note;
         showToast(error.message, 'error');
       }
     });

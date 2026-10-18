@@ -272,7 +272,7 @@ exports.getMonthlyExpenseAnalytics = async (req, res) => {
 
     const minQueryDate = startOfPrevMonth < startOfYear ? startOfPrevMonth : startOfYear;
 
-    const [allRangeExpenses, monthIncomesAgg] = await Promise.all([
+    const [allRangeExpenses, monthIncomesAgg, allIncomesAgg, pinnedGoal] = await Promise.all([
       ExpenseNote.find({
         userId: req.user._id,
         date: { $gte: minQueryDate, $lte: endOfYear },
@@ -294,9 +294,26 @@ exports.getMonthlyExpenseAnalytics = async (req, res) => {
           },
         },
       ]),
+      IncomeNote.aggregate([
+        {
+          $match: {
+            userId: req.user._id,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalIncome: { $sum: '$amount' },
+          },
+        },
+      ]),
+      Goal.findOne({ userId: req.user._id }).sort({ isPinned: -1, createdAt: -1 }).lean(),
     ]);
 
     const totalIncomeMonth = monthIncomesAgg.length > 0 ? monthIncomesAgg[0].totalIncome : 0;
+    const allNotepadIncome = allIncomesAgg.length > 0 ? allIncomesAgg[0].totalIncome : 0;
+    const goalPrincipal = pinnedGoal ? Math.max(0, Number(pinnedGoal.savingsPrincipal) || 0) : 0;
+    const effectiveIncomeBase = totalIncomeMonth > 0 ? totalIncomeMonth : allNotepadIncome + goalPrincipal;
 
     const monthNotes = [];
     let prevMonthTotal = 0;
@@ -402,6 +419,10 @@ exports.getMonthlyExpenseAnalytics = async (req, res) => {
       }))
       .sort((a, b) => b.total - a.total);
 
+    const netBalanceMonth = effectiveIncomeBase - totalMonth;
+    const expenseToIncomeRatio =
+      effectiveIncomeBase > 0 ? Number(((totalMonth / effectiveIncomeBase) * 100).toFixed(1)) : 0;
+
     return res.json({
       success: true,
       period: {
@@ -413,16 +434,23 @@ exports.getMonthlyExpenseAnalytics = async (req, res) => {
       },
       summary: {
         todayTotal,
+        todayExpenseTotal: todayTotal,
         todayCount,
+        todayExpenseCount: todayCount,
         totalMonth,
+        totalExpenseMonth: totalMonth,
         prevMonthTotal,
         growthPercent,
         dailyAverage,
         totalEntries: monthNotes.length,
         activeDaysCount: dailySeries.filter((d) => d.total > 0).length,
         highestDay,
-        totalIncomeMonth,
-        netBalanceMonth: totalIncomeMonth - totalMonth,
+        highestExpenseDay: highestDay,
+        totalIncomeMonth: effectiveIncomeBase,
+        rawIncomeMonth: totalIncomeMonth,
+        netBalanceMonth,
+        netBalance: netBalanceMonth,
+        expenseToIncomeRatio,
       },
       dailySeries,
       yearlySeries,

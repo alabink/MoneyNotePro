@@ -153,17 +153,33 @@ exports.getIncomes = async (req, res) => {
       filter.date = { $gte: start, $lte: end };
     }
 
-    const incomes = await IncomeNote.find(filter)
-      .sort({ date: -1, createdAt: -1 })
-      .limit(Number(limit))
-      .lean();
+    const expenseFilter = { userId: req.user._id };
+    if (filter.date) {
+      expenseFilter.date = filter.date;
+    }
+
+    const [incomes, expenseAgg] = await Promise.all([
+      IncomeNote.find(filter)
+        .sort({ date: -1, createdAt: -1 })
+        .limit(Number(limit))
+        .lean(),
+      ExpenseNote.aggregate([
+        { $match: expenseFilter },
+        { $group: { _id: null, totalExpense: { $sum: '$amount' }, count: { $sum: 1 } } },
+      ]),
+    ]);
 
     const totalFilteredAmount = incomes.reduce((sum, item) => sum + item.amount, 0);
+    const totalExpenseAmount = expenseAgg.length > 0 ? expenseAgg[0].totalExpense : 0;
+    const netAmount = totalFilteredAmount - totalExpenseAmount;
 
     return res.json({
       success: true,
       count: incomes.length,
       totalAmount: totalFilteredAmount,
+      grossAmount: totalFilteredAmount,
+      totalExpenseAmount,
+      netAmount,
       incomes,
     });
   } catch (error) {
