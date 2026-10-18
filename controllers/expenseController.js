@@ -1,14 +1,22 @@
 const ExpenseNote = require('../models/ExpenseNote');
 const IncomeNote = require('../models/IncomeNote');
+const Goal = require('../models/Goal');
 const { SystemSetting } = require('../models/SystemSetting');
 const { parseSmartExpenseNotepad } = require('../utils/notepadParser');
 const { recalculateUserStreak, toLocalDateKey, parseLocalDateSafe } = require('../utils/streakHelper');
+const { enrichGoalWithProgress } = require('./goalController');
 const { invalidateUserCache } = require('../middleware/auth');
 
 function syncUserStreakInBackground(userId) {
   setImmediate(async () => {
     try {
-      await recalculateUserStreak(userId);
+      await Promise.all([
+        recalculateUserStreak(userId),
+        (async () => {
+          const goals = await Goal.find({ userId });
+          await Promise.all(goals.map((g) => enrichGoalWithProgress(g)));
+        })(),
+      ]);
       invalidateUserCache(userId);
     } catch (_) {}
   });

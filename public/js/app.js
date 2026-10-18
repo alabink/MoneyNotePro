@@ -1387,16 +1387,121 @@ function renderExpenseSummaryAndCalendarUI() {
   renderExpenseCharts(dailySeries, categorySeries);
 }
 
+function buildClientExpenseCalendarFallback(monthInput, yearInput) {
+  const now = new Date();
+  const month = parseInt(monthInput, 10) || now.getMonth() + 1;
+  const year = parseInt(yearInput, 10) || now.getFullYear();
+  const startOfMonth = new Date(year, month - 1, 1);
+  const endOfMonth = new Date(year, month, 0);
+  const daysInMonth = endOfMonth.getDate();
+  const isCurrentMonth = now.getFullYear() === year && now.getMonth() + 1 === month;
+  const elapsedDays = isCurrentMonth ? Math.max(1, now.getDate()) : daysInMonth;
+  const todayStr = toInputDateValue(now);
+  const monthPrefix = `${year}-${String(month).padStart(2, '0')}-`;
+
+  const dailyMap = {};
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${monthPrefix}${String(d).padStart(2, '0')}`;
+    dailyMap[d] = { day: d, dateStr, total: 0, count: 0, items: [] };
+  }
+
+  const categoryMap = {};
+  let todayTotal = 0;
+  let todayCount = 0;
+  let totalMonth = 0;
+  let totalEntries = 0;
+
+  for (const exp of state.expenses || []) {
+    const dStr = toInputDateValue(exp.date);
+    const amt = Number(exp.amount) || 0;
+    if (dStr === todayStr) {
+      todayTotal += amt;
+      todayCount += 1;
+    }
+    if (dStr.startsWith(monthPrefix)) {
+      const dayNum = parseInt(dStr.slice(8, 10), 10);
+      if (dailyMap[dayNum]) {
+        dailyMap[dayNum].total += amt;
+        dailyMap[dayNum].count += 1;
+        dailyMap[dayNum].items.push(exp);
+      }
+      totalMonth += amt;
+      totalEntries += 1;
+      const cat = exp.category || 'Chi tiêu khác';
+      if (!categoryMap[cat]) categoryMap[cat] = { category: cat, total: 0, count: 0 };
+      categoryMap[cat].total += amt;
+      categoryMap[cat].count += 1;
+    }
+  }
+
+  const dailySeries = Object.values(dailyMap);
+  let highestDay = { day: null, dateStr: null, total: 0, count: 0 };
+  for (const d of dailySeries) {
+    if (d.total > highestDay.total) {
+      highestDay = { day: d.day, dateStr: d.dateStr, total: d.total, count: d.count };
+    }
+  }
+
+  const categorySeries = Object.values(categoryMap)
+    .map((c) => ({
+      ...c,
+      percentage: totalMonth > 0 ? Number(((c.total / totalMonth) * 100).toFixed(1)) : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const monthIncomes = (state.incomes || []).filter((i) => toInputDateValue(i.date).startsWith(monthPrefix));
+  const rawIncomeMonth = monthIncomes.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const allIncomesTotal = (state.incomes || []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const goalSavings = state.pinnedGoal?.metrics?.savingsPrincipal || 0;
+  const totalIncomeMonth = rawIncomeMonth > 0 ? rawIncomeMonth : allIncomesTotal + goalSavings;
+  const netBalanceMonth = totalIncomeMonth - totalMonth;
+  const expenseToIncomeRatio =
+    totalIncomeMonth > 0 ? Number(((totalMonth / totalIncomeMonth) * 100).toFixed(1)) : 0;
+
+  return {
+    period: {
+      month,
+      year,
+      daysInMonth,
+      elapsedDays,
+      firstDayWeekday: startOfMonth.getDay(),
+    },
+    summary: {
+      todayTotal,
+      todayExpenseTotal: todayTotal,
+      todayCount,
+      todayExpenseCount: todayCount,
+      totalMonth,
+      totalExpenseMonth: totalMonth,
+      prevMonthTotal: 0,
+      growthPercent: 0,
+      dailyAverage: Math.round(totalMonth / elapsedDays),
+      totalEntries,
+      activeDaysCount: dailySeries.filter((d) => d.total > 0).length,
+      highestDay,
+      highestExpenseDay: highestDay,
+      totalIncomeMonth,
+      rawIncomeMonth,
+      netBalanceMonth,
+      netBalance: netBalanceMonth,
+      expenseToIncomeRatio,
+    },
+    dailySeries,
+    yearlySeries: [],
+    categorySeries,
+  };
+}
+
 async function loadExpenseCalendar() {
+  const monthEl = document.getElementById('exp-cal-month');
+  const yearEl = document.getElementById('exp-cal-year');
+  if (!monthEl || !yearEl) return;
+
+  const month = monthEl.value;
+  const year = yearEl.value;
+  const grid = document.getElementById('expense-calendar-grid');
+
   try {
-    const monthEl = document.getElementById('exp-cal-month');
-    const yearEl = document.getElementById('exp-cal-year');
-    if (!monthEl || !yearEl) return;
-
-    const month = monthEl.value;
-    const year = yearEl.value;
-    const grid = document.getElementById('expense-calendar-grid');
-
     if (
       grid &&
       (!state.expenseCalendarData ||
@@ -1413,6 +1518,8 @@ async function loadExpenseCalendar() {
     renderExpenseSummaryAndCalendarUI();
   } catch (error) {
     console.error('Load expense calendar error:', error);
+    state.expenseCalendarData = buildClientExpenseCalendarFallback(month, year);
+    renderExpenseSummaryAndCalendarUI();
   }
 }
 
@@ -1749,10 +1856,19 @@ function applyOptimisticExpenseChange(action, expenseObj, deletedId = null) {
   if (countBadge) countBadge.textContent = (state.expenses || []).length;
   if (totalBadge) totalBadge.textContent = `-${formatVND(totalAmount)}`;
 
+  // Cập nhật ngay badge Tổng thu nhập ròng ở tab Sổ tay Thu nhập
+  const grossIncomeAmount = (state.incomes || []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  updateIncomeListTotalBadge(grossIncomeAmount, totalAmount);
+
   renderExpenseNotesList();
 
   // Cập nhật tức thì (0ms) trên 4 KPI Cards & Lịch Chi Tiêu
-  if (state.expenseCalendarData && Array.isArray(state.expenseCalendarData.dailySeries)) {
+  if (!state.expenseCalendarData || !Array.isArray(state.expenseCalendarData.dailySeries)) {
+    const m = document.getElementById('exp-cal-month')?.value;
+    const y = document.getElementById('exp-cal-year')?.value;
+    state.expenseCalendarData = buildClientExpenseCalendarFallback(m, y);
+    renderExpenseSummaryAndCalendarUI();
+  } else if (state.expenseCalendarData && Array.isArray(state.expenseCalendarData.dailySeries)) {
     const series = state.expenseCalendarData.dailySeries;
     const summary = state.expenseCalendarData.summary || {};
     const period = state.expenseCalendarData.period || {};
