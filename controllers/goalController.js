@@ -100,6 +100,16 @@ async function enrichGoalWithProgress(goalDoc) {
       ? Math.round(savingsPrincipal * (monthlyInterestRateRaw / 100))
       : 0;
 
+  // Lãi suất mỗi ngày (%) = lãi suất tháng / 30 (VD: 1.333333% / 30 = 0.044444%/ngày)
+  const dailyInterestRateRaw = monthlyInterestRateRaw / 30;
+  const dailyInterestRateDisplay = Number(dailyInterestRateRaw.toFixed(4));
+
+  // Số tiền lãi nhận được mỗi ngày (VNĐ) (VD: 2.666.667 / 30 = 88.889 VNĐ/ngày)
+  const dailyInterestAmount =
+    savingsPrincipal > 0 && dailyInterestRateRaw > 0
+      ? Math.round(savingsPrincipal * (dailyInterestRateRaw / 100))
+      : 0;
+
   // Số tháng thực tế tính từ startDate đến hạn endDate (nếu người dùng sửa hạn endDate thì tự động tính tiếp lãi)
   const activeDurationMonths = calculateDurationMonths(start, end);
   const displayDurationMonths = Number(activeDurationMonths.toFixed(2));
@@ -110,12 +120,25 @@ async function enrichGoalWithProgress(goalDoc) {
       ? Math.round(savingsPrincipal * (monthlyInterestRateRaw / 100) * activeDurationMonths)
       : 0;
 
-  // Số tháng đã trôi qua tính đến hôm nay (để biết lãi đã phát sinh đến thời điểm hiện tại)
-  const effectiveNow = now < start ? start : now > end ? end : now;
-  const elapsedMonths = calculateDurationMonths(start, effectiveNow);
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const startDayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
+  const endDayStart = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0, 0);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+  // Tổng số ngày tính lãi của kỳ hạn & số ngày đã gửi thực tế đến hôm nay
+  const totalInterestDays = Math.max(1, Math.round((endDayStart.getTime() - startDayStart.getTime()) / msPerDay));
+  const rawElapsedInterestDays = Math.floor((todayStart.getTime() - startDayStart.getTime()) / msPerDay);
+  const elapsedInterestDays = Math.max(0, Math.min(totalInterestDays, rawElapsedInterestDays));
+
+  // Tổng tiền lãi cộng dồn theo từng ngày tính đến hôm nay
   const accruedInterestToDate =
-    savingsPrincipal > 0 && monthlyInterestRateRaw > 0
-      ? Math.round(savingsPrincipal * (monthlyInterestRateRaw / 100) * elapsedMonths)
+    savingsPrincipal > 0 && dailyInterestRateRaw > 0
+      ? elapsedInterestDays >= totalInterestDays
+        ? totalProjectedInterest
+        : Math.min(
+            totalProjectedInterest,
+            Math.round(savingsPrincipal * (dailyInterestRateRaw / 100) * elapsedInterestDays)
+          )
       : 0;
 
   // Tạo bảng lịch trả lãi từng tháng (Monthly Interest Schedule)
@@ -143,9 +166,49 @@ async function enrichGoalWithProgress(goalDoc) {
     }
   }
 
+  // Tạo bảng lịch cộng lãi theo từng ngày (Daily Interest Schedule)
+  const dailyScheduleCount = Math.min(366, Math.max(1, totalInterestDays));
+  const dailySchedule = [];
+  if (savingsPrincipal > 0 && dailyInterestRateRaw > 0) {
+    for (let d = 1; d <= dailyScheduleCount; d++) {
+      const cumulativeInterest =
+        d >= totalInterestDays
+          ? totalProjectedInterest
+          : Math.min(
+              totalProjectedInterest,
+              Math.round(savingsPrincipal * (dailyInterestRateRaw / 100) * d)
+            );
+      const dayDate = new Date(
+        startDayStart.getFullYear(),
+        startDayStart.getMonth(),
+        startDayStart.getDate() + d,
+        12,
+        0,
+        0
+      );
+
+      dailySchedule.push({
+        dayNumber: d,
+        label: `Ngày ${d}`,
+        date: dayDate,
+        ratePercent: dailyInterestRateDisplay,
+        interestAmount: dailyInterestAmount,
+        cumulativeInterest,
+        totalWithPrincipal: savingsPrincipal + cumulativeInterest,
+        isAccrued: d <= elapsedInterestDays,
+        isToday: d === elapsedInterestDays,
+      });
+    }
+  }
+
   // 3. Tổng số tiền đã đạt được của Mục tiêu = Tiền tiết kiệm gốc + Tiền lãi theo hạn + Thu nhập Sổ tay - Chi tiêu Sổ tay
   const savingsWithInterest = savingsPrincipal + totalProjectedInterest;
+  const savingsWithAccruedInterest = savingsPrincipal + accruedInterestToDate;
   const currentAmount = Math.max(0, savingsWithInterest + notepadIncomeAmount - notepadExpenseAmount);
+  const currentAmountWithDailyInterest = Math.max(
+    0,
+    savingsWithAccruedInterest + notepadIncomeAmount - notepadExpenseAmount
+  );
 
   const targetAmount = goal.targetAmount;
   const remainingAmount = Math.max(0, targetAmount - currentAmount);
@@ -154,16 +217,11 @@ async function enrichGoalWithProgress(goalDoc) {
   const overAchievedPercent = Number(rawPercent.toFixed(1));
 
   // 4. Tính số ngày & Máy tính tốc độ kiếm tiền (Pace Calculator) cho phần tiền còn thiếu
-  const msPerDay = 1000 * 60 * 60 * 24;
   const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / msPerDay));
-
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const endDayStart = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0, 0);
 
   const diffDaysToEnd = Math.floor((endDayStart.getTime() - todayStart.getTime()) / msPerDay) + 1;
   const remainingDays = Math.max(0, diffDaysToEnd);
 
-  const startDayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
   const elapsedDays = Math.min(
     totalDays,
     Math.max(1, Math.floor((todayStart.getTime() - startDayStart.getTime()) / msPerDay) + 1)
@@ -236,6 +294,7 @@ async function enrichGoalWithProgress(goalDoc) {
     status,
     metrics: {
       currentAmount,
+      currentAmountWithDailyInterest,
       targetAmount,
       remainingAmount,
       notepadIncomeAmount,
@@ -247,11 +306,17 @@ async function enrichGoalWithProgress(goalDoc) {
       interestTermMonths,
       monthlyInterestRateDisplay,
       monthlyInterestAmount,
+      dailyInterestRateDisplay,
+      dailyInterestAmount,
+      totalInterestDays,
+      elapsedInterestDays,
       activeDurationMonths: displayDurationMonths,
       totalProjectedInterest,
       accruedInterestToDate,
       savingsWithInterest,
+      savingsWithAccruedInterest,
       monthlySchedule,
+      dailySchedule,
       progressPercent,
       overAchievedPercent,
       entryCount,

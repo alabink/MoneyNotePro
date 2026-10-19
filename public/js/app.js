@@ -1978,6 +1978,10 @@ function applyOptimisticExpenseChange(action, expenseObj, deletedId = null) {
     m.notepadExpenseAmount = Math.max(0, (m.notepadExpenseAmount || 0) + deltaExpense);
     m.notepadNetAmount = (m.notepadIncomeAmount || 0) - m.notepadExpenseAmount;
     m.currentAmount = Math.max(0, (m.savingsWithInterest || 0) + m.notepadNetAmount);
+    m.currentAmountWithDailyInterest = Math.max(
+      0,
+      (m.savingsWithAccruedInterest || (m.savingsPrincipal || 0) + (m.accruedInterestToDate || 0)) + m.notepadNetAmount
+    );
     m.remainingAmount = Math.max(0, (m.targetAmount || 0) - m.currentAmount);
     const rawPct = m.targetAmount > 0 ? (m.currentAmount / m.targetAmount) * 100 : 0;
     m.progressPercent = Number(Math.min(100, rawPct).toFixed(1));
@@ -2122,6 +2126,92 @@ async function loadGoals() {
   }
 }
 
+function ensureGoalDailyMetrics(g, m) {
+  if (!g || !m) return m;
+  const savingsPrincipal = Math.max(0, Number(m.savingsPrincipal ?? g.savingsPrincipal) || 0);
+  const interestRate = Math.max(0, Number(m.interestRate ?? g.interestRate) || 0);
+  const interestTermMonths = Math.max(1, Number(m.interestTermMonths ?? g.interestTermMonths) || 6);
+  const monthlyRateRaw = interestRate > 0 ? interestRate / interestTermMonths : 0;
+  const dailyRateRaw = monthlyRateRaw / 30;
+
+  if (m.dailyInterestRateDisplay === undefined) {
+    m.dailyInterestRateDisplay = Number(dailyRateRaw.toFixed(4));
+  }
+  if (m.dailyInterestAmount === undefined) {
+    m.dailyInterestAmount =
+      savingsPrincipal > 0 && dailyRateRaw > 0
+        ? Math.round(savingsPrincipal * (dailyRateRaw / 100))
+        : 0;
+  }
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const start = new Date(g.startDate);
+  const end = new Date(g.endDate);
+  const now = new Date();
+  const startDayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
+  const endDayStart = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0, 0);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+  const totalInterestDays = Math.max(1, Math.round((endDayStart.getTime() - startDayStart.getTime()) / msPerDay));
+  const rawElapsed = Math.floor((todayStart.getTime() - startDayStart.getTime()) / msPerDay);
+  const elapsedInterestDays = Math.max(0, Math.min(totalInterestDays, rawElapsed));
+
+  if (m.totalInterestDays === undefined) m.totalInterestDays = totalInterestDays;
+  if (m.elapsedInterestDays === undefined) m.elapsedInterestDays = elapsedInterestDays;
+
+  const totalProjectedInterest = Number(m.totalProjectedInterest) || 0;
+  if (m.accruedInterestToDate === undefined) {
+    m.accruedInterestToDate =
+      savingsPrincipal > 0 && dailyRateRaw > 0
+        ? elapsedInterestDays >= totalInterestDays
+          ? totalProjectedInterest
+          : Math.min(
+              totalProjectedInterest,
+              Math.round(savingsPrincipal * (dailyRateRaw / 100) * elapsedInterestDays)
+            )
+        : 0;
+  }
+
+  m.savingsWithAccruedInterest = savingsPrincipal + (m.accruedInterestToDate || 0);
+  m.currentAmountWithDailyInterest = Math.max(
+    0,
+    m.savingsWithAccruedInterest + (m.notepadIncomeAmount || 0) - (m.notepadExpenseAmount || 0)
+  );
+
+  if (!Array.isArray(m.dailySchedule) && savingsPrincipal > 0 && dailyRateRaw > 0) {
+    const dailyScheduleCount = Math.min(366, Math.max(1, totalInterestDays));
+    const schedule = [];
+    for (let d = 1; d <= dailyScheduleCount; d++) {
+      const cumulativeInterest =
+        d >= totalInterestDays
+          ? totalProjectedInterest
+          : Math.min(totalProjectedInterest, Math.round(savingsPrincipal * (dailyRateRaw / 100) * d));
+      const dayDate = new Date(
+        startDayStart.getFullYear(),
+        startDayStart.getMonth(),
+        startDayStart.getDate() + d,
+        12,
+        0,
+        0
+      );
+      schedule.push({
+        dayNumber: d,
+        label: `Ngày ${d}`,
+        date: dayDate,
+        ratePercent: m.dailyInterestRateDisplay,
+        interestAmount: m.dailyInterestAmount,
+        cumulativeInterest,
+        totalWithPrincipal: savingsPrincipal + cumulativeInterest,
+        isAccrued: d <= elapsedInterestDays,
+        isToday: d === elapsedInterestDays,
+      });
+    }
+    m.dailySchedule = schedule;
+  }
+
+  return m;
+}
+
 function renderHeroGoalBanner() {
   const container = document.getElementById('hero-goal-container');
   if (!container) return;
@@ -2148,7 +2238,7 @@ function renderHeroGoalBanner() {
   }
 
   const g = state.pinnedGoal;
-  const m = g.metrics;
+  const m = ensureGoalDailyMetrics(g, g.metrics);
 
   const badgeColors = {
     completed: 'bg-emerald-400 text-slate-950',
@@ -2167,6 +2257,7 @@ function renderHeroGoalBanner() {
 
   const hasSavings = (m.savingsPrincipal || 0) > 0;
   const rateText = String(m.monthlyInterestRateDisplay || 0).replace('.', ',');
+  const dailyRateText = String(m.dailyInterestRateDisplay || 0).replace('.', ',');
   const scheduleRows = (m.monthlySchedule || [])
     .map(
       (row) => `
@@ -2177,6 +2268,44 @@ function renderHeroGoalBanner() {
         <td class="py-2 px-2.5 text-emerald-400 font-extrabold">+${formatVND(row.interestAmount)}</td>
         <td class="py-2 px-2.5 text-amber-300 font-bold">+${formatVND(row.cumulativeInterest)}</td>
         <td class="py-2 px-2.5 text-white font-extrabold text-right">${formatVND(row.totalWithPrincipal)}</td>
+      </tr>
+    `
+    )
+    .join('');
+
+  const dailyScheduleRows = (m.dailySchedule || [])
+    .map(
+      (row) => `
+      <tr data-daily-accrued="${row.isAccrued ? '1' : '0'}" id="${row.isToday ? `hero-daily-today-${g._id}` : ''}"
+          class="border-b border-white/10 last:border-none text-xs ${
+            row.isToday
+              ? 'bg-cyan-500/20 border-cyan-400/40'
+              : row.isAccrued
+              ? 'bg-emerald-500/5'
+              : 'opacity-70'
+          }">
+        <td class="py-2 px-2.5 font-bold ${row.isToday ? 'text-cyan-300' : 'text-indigo-200'}">
+          ${escapeHtml(row.label)}
+          ${
+            row.isToday
+              ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-cyan-400 text-slate-950 text-[10px] font-extrabold">Hôm nay</span>`
+              : ''
+          }
+        </td>
+        <td class="py-2 px-2.5 text-slate-300">${formatDateVN(row.date)}</td>
+        <td class="py-2 px-2.5 text-cyan-300 font-semibold">${String(row.ratePercent).replace('.', ',')}%</td>
+        <td class="py-2 px-2.5 text-emerald-400 font-extrabold">+${formatVND(row.interestAmount)}</td>
+        <td class="py-2 px-2.5 text-amber-300 font-bold">+${formatVND(row.cumulativeInterest)}</td>
+        <td class="py-2 px-2.5 text-white font-extrabold text-right">${formatVND(row.totalWithPrincipal)}</td>
+        <td class="py-2 px-2.5 text-right">
+          ${
+            row.isToday
+              ? `<span class="px-2 py-0.5 rounded-full bg-cyan-500/30 text-cyan-200 text-[10px] font-bold">📍 Hôm nay</span>`
+              : row.isAccrued
+              ? `<span class="px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 text-[10px] font-bold">✅ Đã cộng</span>`
+              : `<span class="px-2 py-0.5 rounded-full bg-white/10 text-slate-300 text-[10px] font-semibold">⏳ Dự kiến</span>`
+          }
+        </td>
       </tr>
     `
     )
@@ -2231,6 +2360,16 @@ function renderHeroGoalBanner() {
               <span class="text-2xl sm:text-3xl font-extrabold text-emerald-400">${formatVND(m.currentAmount)}</span>
               <span class="text-sm text-slate-300">/ Mục tiêu ${formatVND(m.targetAmount)}</span>
             </div>
+            ${
+              hasSavings
+                ? `<p class="text-[11px] text-slate-300 mt-1">
+                     ✨ Đã gồm lãi cả kỳ (<b class="text-amber-300">+${formatVND(m.totalProjectedInterest || 0)}</b>) •
+                     🗓️ Tài sản tính theo lãi từng ngày đến hôm nay (${m.elapsedInterestDays || 0} ngày):
+                     <b class="text-cyan-300">${formatVND(m.currentAmountWithDailyInterest || 0)}</b>
+                     (Lãi đã cộng: <b class="text-emerald-300">+${formatVND(m.accruedInterestToDate || 0)}</b>)
+                   </p>`
+                : ''
+            }
           </div>
           <div class="text-right">
             <span class="text-3xl font-black text-white">${m.overAchievedPercent}%</span>
@@ -2243,8 +2382,8 @@ function renderHeroGoalBanner() {
                style="width: ${Math.min(100, m.progressPercent)}%"></div>
         </div>
 
-        <!-- Bóc tách 3 nguồn tiền cấu thành Mục tiêu -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <!-- Bóc tách 4 nguồn tiền cấu thành Mục tiêu (thêm mục Tổng lãi cộng theo từng ngày) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div class="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30">
             <div class="flex items-center justify-between">
               <p class="text-[11px] text-emerald-200 font-bold uppercase">💰 Tiền đã làm được (Tiết kiệm gốc)</p>
@@ -2270,7 +2409,21 @@ function renderHeroGoalBanner() {
             </p>
             <p class="text-[11px] text-amber-100/90 mt-0.5">
               Tổng lãi ${m.activeDurationMonths} tháng: <b class="text-white">+${formatVND(m.totalProjectedInterest || 0)}</b>
-              (Đã tích lũy: +${formatVND(m.accruedInterestToDate || 0)})
+              (Gốc + Lãi: ${formatVND(m.savingsWithInterest || 0)})
+            </p>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-cyan-500/15 border border-cyan-400/30">
+            <div class="flex items-center justify-between gap-1">
+              <p class="text-[11px] text-cyan-200 font-bold uppercase">🗓️ Tổng lãi cộng theo từng ngày</p>
+              <span class="text-[11px] px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 font-bold shrink-0">+${formatVND(m.dailyInterestAmount || 0)}/ngày</span>
+            </div>
+            <p class="text-lg font-extrabold text-cyan-300 mt-1">
+              +${formatVND(m.accruedInterestToDate || 0)} <span class="text-xs font-semibold text-cyan-100">(${m.elapsedInterestDays || 0}/${m.totalInterestDays || 0} ngày)</span>
+            </p>
+            <p class="text-[11px] text-cyan-100/90 mt-0.5">
+              Lãi ngày (${dailyRateText}%): <b class="text-white">+${formatVND(m.dailyInterestAmount || 0)}</b> •
+              Gốc + Lãi nay: <b class="text-emerald-300">${formatVND(m.savingsWithAccruedInterest || 0)}</b>
             </p>
           </div>
 
@@ -2299,18 +2452,64 @@ function renderHeroGoalBanner() {
         ${
           hasSavings && (m.monthlySchedule || []).length > 0
             ? `
-            <div class="pt-1">
+            <div class="pt-1 space-y-3">
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <button type="button" onclick="toggleGoalMonthlySchedule('hero-schedule-${g._id}')"
-                  class="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-300 hover:text-emerald-200 bg-white/10 px-3 py-1.5 rounded-xl transition">
-                  <span>📊 Xem bảng tính lãi chi tiết từng tháng (${m.activeDurationMonths} tháng • +${formatVND(m.monthlyInterestAmount)}/tháng)</span>
-                </button>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" onclick="toggleGoalMonthlySchedule('hero-schedule-${g._id}')"
+                    class="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-300 hover:text-emerald-200 bg-white/10 px-3 py-1.5 rounded-xl transition">
+                    <span>📊 Xem bảng tính lãi chi tiết từng tháng (${m.activeDurationMonths} tháng • +${formatVND(m.monthlyInterestAmount)}/tháng)</span>
+                  </button>
+                  <button type="button" onclick="toggleGoalDailySchedule('hero-daily-schedule-${g._id}', 'hero-daily-today-${g._id}')"
+                    class="inline-flex items-center gap-1.5 text-xs font-extrabold text-cyan-300 hover:text-cyan-200 bg-cyan-500/20 border border-cyan-400/30 px-3 py-1.5 rounded-xl transition">
+                    <span>🗓️ Xem bảng tổng lãi cộng theo từng ngày (${m.elapsedInterestDays || 0}/${m.totalInterestDays || 0} ngày • +${formatVND(m.dailyInterestAmount || 0)}/ngày)</span>
+                  </button>
+                </div>
                 <span class="text-[11px] text-slate-300">
-                  💡 Mẹo: Khi gửi thêm tiền hoặc sửa Ngày đáo hạn, bảng lãi dưới đây tự động nối tiếp các tháng mới!
+                  💡 Mẹo: Khi gửi thêm tiền hoặc sửa Ngày đáo hạn, bảng lãi dưới đây tự động nối tiếp các tháng & ngày mới!
                 </span>
               </div>
 
-              <div id="hero-schedule-${g._id}" class="mt-3 overflow-x-auto rounded-xl bg-slate-950/60 border border-white/10 p-3">
+              <div id="hero-daily-schedule-${g._id}" class="overflow-x-auto rounded-xl bg-slate-950/70 border border-cyan-400/30 p-3 space-y-2.5">
+                <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/10">
+                  <div class="text-xs text-cyan-200 font-bold">
+                    🗓️ Bảng tổng lãi cộng dồn theo từng ngày:
+                    <span class="text-emerald-300">+${formatVND(m.dailyInterestAmount || 0)}/ngày</span> •
+                    Đã tích lũy <b class="text-white">${m.elapsedInterestDays || 0} ngày</b> =
+                    <span class="text-amber-300 font-extrabold">+${formatVND(m.accruedInterestToDate || 0)}</span>
+                    (Gốc + Lãi hôm nay: <b class="text-white">${formatVND(m.savingsWithAccruedInterest || 0)}</b>)
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <button type="button" onclick="filterGoalDailySchedule('hero-daily-schedule-${g._id}', 'accrued')"
+                      class="px-2.5 py-1 rounded-lg bg-cyan-500/25 hover:bg-cyan-500/35 text-cyan-200 text-[11px] font-bold transition">
+                      Đã cộng đến hôm nay (${m.elapsedInterestDays || 0} ngày)
+                    </button>
+                    <button type="button" onclick="filterGoalDailySchedule('hero-daily-schedule-${g._id}', 'all')"
+                      class="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-semibold transition">
+                      Tất cả kỳ hạn (${(m.dailySchedule || []).length} ngày)
+                    </button>
+                  </div>
+                </div>
+                <div class="max-h-64 overflow-y-auto pr-1">
+                  <table class="w-full text-left border-collapse">
+                    <thead class="sticky top-0 bg-slate-950 z-10">
+                      <tr class="border-b border-white/15 text-[11px] uppercase text-slate-400">
+                        <th class="py-1.5 px-2.5">Kỳ ngày</th>
+                        <th class="py-1.5 px-2.5">Ngày nhận lãi</th>
+                        <th class="py-1.5 px-2.5">Lãi suất ngày</th>
+                        <th class="py-1.5 px-2.5">Lãi cộng ngày đó</th>
+                        <th class="py-1.5 px-2.5">Tổng lãi cộng dồn</th>
+                        <th class="py-1.5 px-2.5 text-right">Tổng gốc + Lãi</th>
+                        <th class="py-1.5 px-2.5 text-right">Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${dailyScheduleRows}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div id="hero-schedule-${g._id}" class="overflow-x-auto rounded-xl bg-slate-950/60 border border-white/10 p-3">
                 <table class="w-full text-left border-collapse">
                   <thead>
                     <tr class="border-b border-white/15 text-[11px] uppercase text-slate-400">
@@ -2363,6 +2562,32 @@ function toggleGoalMonthlySchedule(elementId) {
   }
 }
 
+function toggleGoalDailySchedule(elementId, todayRowId) {
+  const el = document.getElementById(elementId);
+  if (el) {
+    el.classList.toggle('hidden');
+    if (!el.classList.contains('hidden') && todayRowId) {
+      const todayRow = document.getElementById(todayRowId);
+      if (todayRow) {
+        todayRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
+}
+
+function filterGoalDailySchedule(containerId, mode) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const rows = container.querySelectorAll('tbody tr[data-daily-accrued]');
+  rows.forEach((row) => {
+    if (mode === 'accrued') {
+      row.classList.toggle('hidden', row.getAttribute('data-daily-accrued') !== '1');
+    } else {
+      row.classList.remove('hidden');
+    }
+  });
+}
+
 function renderGoalsGrid() {
   const grid = document.getElementById('goals-grid-list');
   if (!grid) return;
@@ -2379,7 +2604,7 @@ function renderGoalsGrid() {
 
   grid.innerHTML = state.goals
     .map((g) => {
-      const m = g.metrics;
+      const m = ensureGoalDailyMetrics(g, g.metrics);
       const rateText = String(m.monthlyInterestRateDisplay || 0).replace('.', ',');
       return `
         <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 border ${
@@ -2438,7 +2663,11 @@ function renderGoalsGrid() {
               <b class="text-amber-600 dark:text-amber-400">+${formatVND(m.monthlyInterestAmount || 0)} / tháng</b>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-500">✨ Tổng lãi (${m.activeDurationMonths} tháng):</span>
+              <span class="text-slate-500">🗓️ Tổng lãi cộng theo ngày (${m.elapsedInterestDays || 0} ngày • +${formatVND(m.dailyInterestAmount || 0)}/ngày):</span>
+              <b class="text-cyan-600 dark:text-cyan-400">+${formatVND(m.accruedInterestToDate || 0)}</b>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">✨ Tổng lãi cả kỳ (${m.activeDurationMonths} tháng):</span>
               <b class="text-emerald-600 dark:text-emerald-400">+${formatVND(m.totalProjectedInterest || 0)}</b>
             </div>
             <div class="flex justify-between">
@@ -3179,14 +3408,17 @@ function previewGoalInterestCalculator() {
 
   const monthlyRatePercent = interestRate / interestTermMonths;
   const monthlyRateDisplay = Number(monthlyRatePercent.toFixed(4)).toString().replace('.', ',');
+  const dailyRatePercent = monthlyRatePercent / 30;
+  const dailyRateDisplay = Number(dailyRatePercent.toFixed(4)).toString().replace('.', ',');
   const monthlyInterestAmount = Math.round(totalPrincipal * (monthlyRatePercent / 100));
+  const dailyInterestAmount = Math.round(totalPrincipal * (dailyRatePercent / 100));
   const totalProjectedInterest = Math.round(totalPrincipal * (monthlyRatePercent / 100) * activeMonths);
   const totalPrincipalAndInterest = totalPrincipal + totalProjectedInterest;
 
   if (totalPrincipal <= 0) {
     previewBox.innerHTML = `
       <div class="text-slate-500 dark:text-slate-400">
-        💡 Hãy nhập <b>Số tiền đã làm được (Tiết kiệm gốc)</b> hoặc bấm nút <b>"Điền mẫu: Gửi 200 triệu — Lãi 8% / 6 tháng"</b> để xem bảng tính lãi tự động từng tháng.
+        💡 Hãy nhập <b>Số tiền đã làm được (Tiết kiệm gốc)</b> hoặc bấm nút <b>"Điền mẫu: Gửi 200 triệu — Lãi 8% / 6 tháng"</b> để xem bảng tính lãi tự động từng tháng & từng ngày.
       </div>
     `;
     return;
@@ -3195,13 +3427,13 @@ function previewGoalInterestCalculator() {
   previewBox.innerHTML = `
     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200/70 dark:border-emerald-800/60 pb-1.5">
       <span class="font-extrabold text-emerald-700 dark:text-emerald-300">
-        🧮 Công thức tính lãi: ${interestRate}% / ${interestTermMonths} tháng = <span class="underline">${monthlyRateDisplay}% / tháng</span>
+        🧮 Công thức tính lãi: ${interestRate}% / ${interestTermMonths} tháng = <span class="underline">${monthlyRateDisplay}% / tháng</span> (${dailyRateDisplay}% / ngày)
       </span>
       <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[11px]">
         Kỳ hạn đang chọn: ${activeMonths} tháng
       </span>
     </div>
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1">
       <div class="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/70">
         <p class="text-[10px] uppercase text-slate-400 font-bold">Tổng gốc tiết kiệm</p>
         <p class="font-extrabold text-slate-800 dark:text-white text-sm">${formatVND(totalPrincipal)}</p>
@@ -3210,6 +3442,10 @@ function previewGoalInterestCalculator() {
             ? `<p class="text-[10px] text-indigo-500 font-semibold">(Đã cộng thêm +${formatVND(additionalDeposit)})</p>`
             : ''
         }
+      </div>
+      <div class="p-2 rounded-lg bg-cyan-50/80 dark:bg-cyan-950/40">
+        <p class="text-[10px] uppercase text-cyan-600 dark:text-cyan-400 font-bold">Tiền lãi mỗi ngày (${dailyRateDisplay}%)</p>
+        <p class="font-extrabold text-cyan-600 dark:text-cyan-400 text-sm">+${formatVND(dailyInterestAmount)} / ngày</p>
       </div>
       <div class="p-2 rounded-lg bg-amber-50/80 dark:bg-amber-950/40">
         <p class="text-[10px] uppercase text-amber-600 dark:text-amber-400 font-bold">Tiền lãi mỗi tháng (${monthlyRateDisplay}%)</p>
