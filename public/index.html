@@ -34,7 +34,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/css/styles.css?v=20261018_expenses" />
+  <link rel="stylesheet" href="/css/styles.css?v=20261019_navbar_fix" />
 </head>
 <body class="grid-paper-bg text-slate-800 dark:text-slate-100 min-h-screen flex flex-col">
 
@@ -234,99 +234,99 @@
       </div>
     </div>
 
-    <!-- TOP NAVIGATION BAR (REDESIGNED SINGLE-LINE MODERN HEADER) -->
+    <!-- TOP NAVIGATION BAR (BALANCED SINGLE-LINE MODERN HEADER) -->
     <header class="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-sm">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6">
-        <div class="flex items-center justify-between min-h-[68px] py-2 gap-3">
+      <div class="max-w-[1400px] w-full mx-auto px-3 sm:px-6">
+        <div class="flex items-center justify-between min-h-[64px] py-2 gap-2 xl:gap-3">
 
           <!-- Left: Brand Logo & Title (Never wraps) -->
-          <div onclick="switchMainTab('home')" class="cursor-pointer flex items-center gap-3 shrink-0">
-            <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20 shrink-0">
-              <img src="https://cdn-icons-png.flaticon.com/512/3135/3135679.png" alt="Logo" class="w-6 h-6 object-contain"
+          <div onclick="switchMainTab('home')" class="cursor-pointer flex items-center gap-2.5 shrink-0">
+            <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20 shrink-0">
+              <img src="https://cdn-icons-png.flaticon.com/512/3135/3135679.png" alt="Logo" class="w-5 h-5 sm:w-6 sm:h-6 object-contain"
                 onerror="this.style.display='none'" />
             </div>
-            <div class="shrink-0">
-              <div class="flex items-center gap-2 whitespace-nowrap">
-                <span class="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white">
+            <div class="shrink-0 flex flex-col justify-center">
+              <div class="flex items-center gap-1.5 whitespace-nowrap leading-none">
+                <span class="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 dark:text-white leading-none">
                   MoneyNote <span class="text-indigo-600 dark:text-indigo-400">Pro</span>
                 </span>
-                <span id="nav-role-badge" class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                <span id="nav-role-badge" class="inline-flex items-center justify-center gap-1 text-[10px] leading-none font-extrabold uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300 self-center">
                   USER
                 </span>
               </div>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap hidden xl:block">
+              <p class="text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap hidden 2xl:block mt-1 leading-none">
                 Sổ tay thu nhập & Theo dõi mục tiêu
               </p>
             </div>
           </div>
 
-          <!-- Center: Navigation Tabs (Desktop - Single-line pills with Flaticon/Lucide icons) -->
-          <nav class="hidden lg:flex items-center gap-1 bg-slate-100/90 dark:bg-slate-800/90 p-1.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 shrink-0">
+          <!-- Center: Navigation Tabs (Desktop - Single-line pills) -->
+          <nav class="hidden lg:flex items-center gap-0.5 xl:gap-1 bg-slate-100/90 dark:bg-slate-800/90 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 min-w-0 overflow-x-auto no-scrollbar">
             <button onclick="switchMainTab('home')" id="nav-tab-home"
-              class="nav-tab-btn whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
-              <i data-lucide="calendar-days" class="w-4 h-4 shrink-0"></i>
+              class="nav-tab-btn whitespace-nowrap shrink-0 px-2.5 xl:px-3 py-1.5 rounded-xl text-[11.5px] xl:text-xs font-bold flex items-center gap-1.5 transition-all bg-white dark:bg-slate-900 shadow-sm text-indigo-600 dark:text-indigo-400">
+              <i data-lucide="calendar-days" class="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0"></i>
               <span>Sổ tay Thu nhập</span>
             </button>
             <button onclick="switchMainTab('expenses')" id="nav-tab-expenses"
-              class="nav-tab-btn whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all text-rose-600 dark:text-rose-400">
-              <i data-lucide="receipt-text" class="w-4 h-4 shrink-0"></i>
+              class="nav-tab-btn whitespace-nowrap shrink-0 px-2.5 xl:px-3 py-1.5 rounded-xl text-[11.5px] xl:text-xs font-bold flex items-center gap-1.5 transition-all text-rose-600 dark:text-rose-400 hover:bg-white/60 dark:hover:bg-slate-700/50">
+              <i data-lucide="receipt-text" class="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0"></i>
               <span>Chi tiêu hằng ngày</span>
             </button>
             <button onclick="switchMainTab('analytics')" id="nav-tab-analytics"
-              class="nav-tab-btn whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
-              <i data-lucide="bar-chart-3" class="w-4 h-4 shrink-0"></i>
+              class="nav-tab-btn whitespace-nowrap shrink-0 px-2.5 xl:px-3 py-1.5 rounded-xl text-[11.5px] xl:text-xs font-bold flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700/50">
+              <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0"></i>
               <span>Thống kê & Biểu đồ</span>
             </button>
             <button onclick="switchMainTab('goals')" id="nav-tab-goals"
-              class="nav-tab-btn whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
-              <i data-lucide="target" class="w-4 h-4 shrink-0"></i>
+              class="nav-tab-btn whitespace-nowrap shrink-0 px-2.5 xl:px-3 py-1.5 rounded-xl text-[11.5px] xl:text-xs font-bold flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700/50">
+              <i data-lucide="target" class="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0"></i>
               <span>Mục tiêu tài chính</span>
             </button>
             <button onclick="switchMainTab('profile')" id="nav-tab-profile"
-              class="nav-tab-btn whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
-              <i data-lucide="user-cog" class="w-4 h-4 shrink-0"></i>
+              class="nav-tab-btn whitespace-nowrap shrink-0 px-2.5 xl:px-3 py-1.5 rounded-xl text-[11.5px] xl:text-xs font-bold flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700/50">
+              <i data-lucide="user-cog" class="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0"></i>
               <span>Hồ sơ cá nhân</span>
             </button>
             <button onclick="switchMainTab('admin')" id="nav-tab-admin"
-              class="nav-tab-btn hidden whitespace-nowrap shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all text-amber-600 dark:text-amber-400">
-              <i data-lucide="shield-check" class="w-4 h-4 shrink-0"></i>
+              class="nav-tab-btn hidden whitespace-nowrap shrink-0 px-2.5 xl:px-3 py-1.5 rounded-xl text-[11.5px] xl:text-xs font-bold flex items-center gap-1.5 transition-all text-amber-600 dark:text-amber-400 hover:bg-white/60 dark:hover:bg-slate-700/50">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0"></i>
               <span>Quản trị (Admin)</span>
             </button>
           </nav>
 
-          <!-- Right Actions: Income Streak 🔥 + Dark Mode + Flaticon User Avatar + Logout -->
-          <div class="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <!-- Right Actions: Income Streak 🔥 + Dark Mode + User Avatar + Logout -->
+          <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <div title="Chuỗi ngày ghi chép liên tiếp (Daily Streak)"
-              class="whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800/70 text-orange-600 dark:text-orange-400 text-xs font-extrabold">
-              <img src="https://cdn-icons-png.flaticon.com/512/426/426833.png" alt="Streak" class="w-4 h-4 object-contain shrink-0 animate-flame" />
-              <span id="header-streak-count">0</span>
-              <span class="hidden sm:inline">ngày Streak</span>
+              class="whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-orange-50 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800/70 text-orange-600 dark:text-orange-400 text-[11px] xl:text-xs leading-none font-extrabold">
+              <img src="https://cdn-icons-png.flaticon.com/512/426/426833.png" alt="Streak" class="w-3.5 h-3.5 xl:w-4 xl:h-4 object-contain shrink-0 animate-flame" />
+              <span id="header-streak-count" class="leading-none">0</span>
+              <span class="hidden sm:inline leading-none">ngày Streak</span>
             </div>
 
             <button onclick="toggleTheme()" title="Chuyển chế độ Sáng / Tối"
-              class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center shrink-0 transition">
+              class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center shrink-0 transition">
               <i data-lucide="moon" class="w-4 h-4 dark:hidden"></i>
               <i data-lucide="sun" class="w-4 h-4 hidden dark:block text-amber-400"></i>
             </button>
 
             <div onclick="switchMainTab('profile')" title="Hồ sơ cá nhân"
-              class="cursor-pointer shrink-0 flex items-center gap-1.5 pl-1.5 pr-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 hover:border-indigo-400 transition">
+              class="cursor-pointer shrink-0 inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 hover:border-indigo-400 transition">
               <img id="header-user-avatar" src="https://cdn-icons-png.flaticon.com/512/3135/3135715.png" alt="Avatar"
                 onerror="this.onerror=null;this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';"
-                class="w-7 h-7 rounded-full object-cover bg-white border border-slate-200 dark:border-slate-600 shrink-0" />
-              <span id="header-user-name" class="text-xs font-bold max-w-[130px] truncate whitespace-nowrap hidden md:inline">Người dùng</span>
-              <span id="header-admin-verified" class="hidden shrink-0"></span>
+                class="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover bg-white border border-slate-200 dark:border-slate-600 shrink-0" />
+              <span id="header-user-name" class="text-xs font-bold leading-none max-w-[115px] xl:max-w-[140px] truncate whitespace-nowrap hidden md:inline-flex items-center self-center">Người dùng</span>
+              <span id="header-admin-verified" class="hidden inline-flex items-center justify-center leading-none self-center shrink-0"></span>
             </div>
 
             <button onclick="handleLogout()" title="Đăng xuất"
-              class="w-9 h-9 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 flex items-center justify-center shrink-0 transition">
+              class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 flex items-center justify-center shrink-0 transition">
               <i data-lucide="log-out" class="w-4 h-4"></i>
             </button>
           </div>
         </div>
 
         <!-- Tablet / Mobile Navigation Bar (< 1024px) -->
-        <div class="flex lg:hidden items-center gap-1.5 overflow-x-auto pb-2.5 pt-1">
+        <div class="flex lg:hidden items-center gap-1.5 overflow-x-auto pb-2.5 pt-1 no-scrollbar">
           <button onclick="switchMainTab('home')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-indigo-600 text-white" data-tab="home">📅 Sổ tay Thu nhập</button>
           <button onclick="switchMainTab('expenses')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800 text-rose-600 dark:text-rose-400" data-tab="expenses">💸 Chi tiêu hằng ngày</button>
           <button onclick="switchMainTab('analytics')" class="mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800" data-tab="analytics">📊 Thống kê & Biểu đồ</button>
@@ -1226,11 +1226,11 @@
                 onerror="this.onerror=null;this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';"
                 class="w-16 h-16 rounded-2xl object-cover bg-white border-2 border-indigo-500 p-0.5 shrink-0" />
               <div>
-                <h3 id="profile-display-name" class="font-bold text-base">Người dùng</h3>
-                <p id="profile-display-email" class="text-xs text-slate-500 dark:text-slate-400">email@moneynote.com</p>
-                <div class="flex items-center gap-2 mt-1.5">
-                  <span id="profile-display-role" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">USER</span>
-                  <span id="profile-display-streak" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300">🔥 0 ngày</span>
+                <h3 id="profile-display-name" class="font-bold text-base flex items-center gap-1.5 leading-none">Người dùng</h3>
+                <p id="profile-display-email" class="text-xs text-slate-500 dark:text-slate-400 mt-1">email@moneynote.com</p>
+                <div class="flex flex-wrap items-center gap-2 mt-1.5">
+                  <span id="profile-display-role" class="inline-flex items-center justify-center gap-1 text-[11px] leading-none font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">USER</span>
+                  <span id="profile-display-streak" class="inline-flex items-center justify-center text-[11px] leading-none font-bold px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300">🔥 0 ngày</span>
                 </div>
               </div>
             </div>
@@ -1825,6 +1825,6 @@
   </div>
 
   <!-- Application Script -->
-  <script src="/js/app.js?v=20261018_expenses_v3"></script>
+  <script src="/js/app.js?v=20261019_navbar_fix"></script>
 </body>
 </html>

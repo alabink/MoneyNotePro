@@ -519,10 +519,10 @@ function getSafeFlaticonAvatar(avatarUrl, role = 'user') {
 }
 
 function getAdminVerifiedBadgeHtml(sizeClass = 'w-4 h-4') {
-  return `<span title="Tài khoản Quản trị viên xác thực (Admin Verified)" class="inline-flex items-center justify-center shrink-0 align-middle select-none">
-    <svg class="${sizeClass} drop-shadow-[0_1px_3px_rgba(29,155,240,0.45)]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 1.5L14.69 3.69L18.12 3.31L19.19 6.61L22.19 8.38L21.12 11.68L22.5 14.85L19.65 16.82L19.03 20.22L15.58 20.47L13.19 23L10.31 21.12L6.88 21.5L5.81 18.2L2.81 16.43L3.88 13.13L2.5 9.96L5.35 7.99L5.97 4.59L9.42 4.34L12 1.5Z" fill="#1D9BF0"/>
-      <path d="M9.5 12.25L11.25 14L15 9.75" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  return `<span title="Tài khoản Quản trị viên xác thực (Admin Verified)" class="verified-badge-icon inline-flex items-center justify-center shrink-0 self-center leading-none select-none">
+    <svg class="${sizeClass} block shrink-0 drop-shadow-[0_1px_2px_rgba(29,155,240,0.4)]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 1.5L14.84 3.92L18.54 3.46L19.42 7.05L22.5 9.19L20.95 12L22.5 14.81L19.42 16.95L18.54 20.54L14.84 20.08L12 22.5L9.16 20.08L5.46 20.54L4.58 16.95L1.5 14.81L3.05 12L1.5 9.19L4.58 7.05L5.46 3.46L9.16 3.92L12 1.5Z" fill="#1D9BF0"/>
+      <path d="M8.75 12.25L10.9 14.4L15.5 9.6" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   </span>`;
 }
@@ -542,9 +542,11 @@ function renderUserHeaderAndProfile() {
     if (isAdmin) {
       headerVerifiedEl.innerHTML = getAdminVerifiedBadgeHtml('w-4 h-4');
       headerVerifiedEl.classList.remove('hidden');
+      headerVerifiedEl.classList.add('inline-flex');
     } else {
       headerVerifiedEl.innerHTML = '';
       headerVerifiedEl.classList.add('hidden');
+      headerVerifiedEl.classList.remove('inline-flex');
     }
   }
 
@@ -553,15 +555,15 @@ function renderUserHeaderAndProfile() {
 
   const roleBadge = document.getElementById('nav-role-badge');
   if (isAdmin) {
-    roleBadge.innerHTML = `<span>ADMIN</span> ${getAdminVerifiedBadgeHtml('w-3.5 h-3.5')}`;
+    roleBadge.innerHTML = `<span class="leading-none">ADMIN</span>${getAdminVerifiedBadgeHtml('w-3.5 h-3.5')}`;
     roleBadge.className =
-      'inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 border border-sky-300/60 dark:border-sky-700/60';
+      'inline-flex items-center justify-center gap-1 text-[10px] leading-none font-extrabold uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 border border-sky-300/60 dark:border-sky-700/60 self-center';
     document.getElementById('nav-tab-admin').classList.remove('hidden');
     document.getElementById('mobile-tab-admin').classList.remove('hidden');
   } else {
     roleBadge.textContent = u.role.toUpperCase();
     roleBadge.className =
-      'text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300';
+      'inline-flex items-center justify-center text-[10px] leading-none font-extrabold uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300 self-center';
     document.getElementById('nav-tab-admin').classList.add('hidden');
     document.getElementById('mobile-tab-admin').classList.add('hidden');
   }
@@ -570,20 +572,20 @@ function renderUserHeaderAndProfile() {
   const profileNameEl = document.getElementById('profile-display-name');
   if (profileNameEl) {
     profileNameEl.innerHTML = isAdmin
-      ? `<span class="inline-flex items-center gap-1.5">${escapeHtml(u.fullName)} ${getAdminVerifiedBadgeHtml('w-5 h-5')}</span>`
-      : escapeHtml(u.fullName);
+      ? `<span class="inline-flex items-center gap-1.5 leading-none"><span class="leading-none">${escapeHtml(u.fullName)}</span>${getAdminVerifiedBadgeHtml('w-5 h-5')}</span>`
+      : `<span class="leading-none">${escapeHtml(u.fullName)}</span>`;
   }
   document.getElementById('profile-display-email').textContent = u.email;
   const profileRoleEl = document.getElementById('profile-display-role');
   if (profileRoleEl) {
     if (isAdmin) {
-      profileRoleEl.innerHTML = `<span class="inline-flex items-center gap-1">👑 QUẢN TRỊ VIÊN (ADMIN) ${getAdminVerifiedBadgeHtml('w-3.5 h-3.5')}</span>`;
+      profileRoleEl.innerHTML = `<span class="leading-none">👑 QUẢN TRỊ VIÊN (ADMIN)</span>${getAdminVerifiedBadgeHtml('w-3.5 h-3.5')}`;
       profileRoleEl.className =
-        'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300/60 dark:border-sky-700/60';
+        'inline-flex items-center justify-center gap-1 text-[11px] leading-none font-bold px-2.5 py-1 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300/60 dark:border-sky-700/60';
     } else {
       profileRoleEl.textContent = '👤 NGƯỜI DÙNG (USER)';
       profileRoleEl.className =
-        'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300';
+        'inline-flex items-center justify-center text-[11px] leading-none font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300';
     }
   }
   document.getElementById('profile-display-streak').textContent = `🔥 Chuỗi ${u.streakCount || 0} ngày liên tiếp`;
@@ -1213,18 +1215,33 @@ function switchMainTab(tabName) {
     }
     if (navBtn) {
       if (t === tabName) {
-        navBtn.classList.add('bg-white', 'dark:bg-slate-900', 'shadow-sm', 'text-indigo-600', 'dark:text-indigo-400');
+        navBtn.classList.add('bg-white', 'dark:bg-slate-900', 'shadow-sm');
+        navBtn.classList.remove('text-slate-600', 'dark:text-slate-300', 'hover:bg-white/60', 'dark:hover:bg-slate-700/50');
+        if (t !== 'expenses' && t !== 'admin') {
+          navBtn.classList.add('text-indigo-600', 'dark:text-indigo-400');
+        }
       } else {
         navBtn.classList.remove('bg-white', 'dark:bg-slate-900', 'shadow-sm', 'text-indigo-600', 'dark:text-indigo-400');
+        navBtn.classList.add('hover:bg-white/60', 'dark:hover:bg-slate-700/50');
+        if (t !== 'expenses' && t !== 'admin') {
+          navBtn.classList.add('text-slate-600', 'dark:text-slate-300');
+        }
       }
     }
   });
 
   document.querySelectorAll('.mobile-tab-btn').forEach((btn) => {
-    const isCurrent = btn.getAttribute('data-tab') === tabName;
-    btn.className = isCurrent
-      ? 'mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-indigo-600 text-white'
-      : 'mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800';
+    const t = btn.getAttribute('data-tab');
+    const isCurrent = t === tabName;
+    if (isCurrent) {
+      btn.className = 'mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-indigo-600 text-white shadow-sm';
+    } else if (t === 'expenses') {
+      btn.className = 'mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800 text-rose-600 dark:text-rose-400';
+    } else if (t === 'admin') {
+      btn.className = `mobile-tab-btn ${state.user && state.user.role === 'admin' ? '' : 'hidden '}px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-amber-500/20 text-amber-600 dark:text-amber-400`;
+    } else {
+      btn.className = 'mobile-tab-btn px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+    }
   });
 
   if (tabName === 'home') {
@@ -3340,25 +3357,25 @@ async function loadAdminUsers() {
               <div class="flex items-center gap-2.5">
                 <img src="${escapeHtml(safeAvatar)}" onerror="this.onerror=null;this.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png';" class="w-9 h-9 rounded-full bg-white border object-cover shrink-0" />
                 <div>
-                  <p class="font-bold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 flex-wrap">
-                    <span>${escapeHtml(u.fullName)}</span>
+                  <div class="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 flex-wrap leading-none">
+                    <span class="leading-none">${escapeHtml(u.fullName)}</span>
                     ${isAdminRole ? getAdminVerifiedBadgeHtml('w-4 h-4') : ''}
-                    ${isSelf ? `<span class="text-[10px] text-indigo-500 font-bold">(Bạn)</span>` : ''}
-                  </p>
-                  <p class="text-xs text-slate-400">${escapeHtml(u.email)}</p>
+                    ${isSelf ? `<span class="text-[10px] text-indigo-500 font-bold leading-none">(Bạn)</span>` : ''}
+                  </div>
+                  <p class="text-xs text-slate-400 mt-1">${escapeHtml(u.email)}</p>
                 </div>
               </div>
             </td>
 
             <td class="py-3.5 px-3">
               <div class="flex flex-wrap items-center gap-1.5">
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                <span class="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full text-[10px] leading-none font-bold uppercase ${
                   isAdminRole
                     ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 border border-sky-300/60 dark:border-sky-700/60'
                     : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                 }">
-                  <span>${u.role}</span>
-                  ${isAdminRole ? getAdminVerifiedBadgeHtml('w-3 h-3') : ''}
+                  <span class="leading-none">${u.role}</span>
+                  ${isAdminRole ? getAdminVerifiedBadgeHtml('w-3.5 h-3.5') : ''}
                 </span>
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                   isBanned

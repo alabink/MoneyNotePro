@@ -60,6 +60,31 @@ html.dark body,
   background: rgba(100, 116, 139, 0.6);
 }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Tích xanh (Verified Badge) luôn căn chính giữa dòng */
+.verified-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex-shrink: 0;
+  align-self: center;
+  vertical-align: middle;
+}
+
+.verified-badge-icon svg {
+  display: block;
+  flex-shrink: 0;
+}
+
 /* Notepad paper subtle grid inside Notepad cards */
 .notepad-surface {
   background-color: rgba(255, 255, 255, 0.92);
